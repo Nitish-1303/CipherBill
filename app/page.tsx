@@ -1,4 +1,5 @@
 import { PrivatePayment } from "@/components/private-payment";
+import { WalletConnect } from "@/components/wallet-connect";
 
 const steps = [
   ["01", "Shield", "Move STRK into a shielded balance through the live privacy pool."],
@@ -12,7 +13,7 @@ export default function Home() {
       <nav>
         <a className="brand" href="#top"><span>◒</span> ShadowPay</a>
         <div className="nav-links"><a href="#workflow">Workflow</a><a href="#demo">Demo</a></div>
-        <button className="wallet" type="button">Connect wallet</button>
+        <WalletConnect />
       </nav>
 
       <section className="hero" id="top">

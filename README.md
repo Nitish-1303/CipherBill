@@ -2,7 +2,7 @@
 
 Privacy-first invoicing and settlement for independent workers and global teams, built for the [STRK20 Private Sprint](https://strk20.starknet.io/hackathon).
 
-> Status: interface and integration boundary are implemented. Live STRK20 SDK calls, wallet execution and mainnet evidence are the next milestones. The product does not claim completed privacy guarantees yet.
+> Status: the Wallet API adapter, guarded wallet connection, shielded balance, shield, and private-transfer UI are implemented. Verified mainnet pool configuration, manual wallet acceptance, invoices, selective receipts, and evidence remain pending. The product does not claim completed privacy guarantees yet.
 
 ## Problem
 
@@ -18,9 +18,9 @@ Public payment rails leak balances, counterparties and commercial relationships.
 
 ## Stack
 
-- Next.js 15, React 19 and TypeScript
-- Starknet.js and Starknet React
-- STRK20 Privacy SDK integration boundary
+- Next.js 15, React 18.3 and TypeScript
+- Starknet.js 10.4 Wallet API
+- STRK20 wallet integration boundary
 - Starknet mainnet target
 
 ## Local development
@@ -32,6 +32,23 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Mainnet configuration
+
+Copy `.env.example` to `.env.local` and provide a public Starknet RPC endpoint and the verified STRK20 mainnet pool address. The application keeps shield, balance, and private-transfer actions disabled until both values are present and the connected wallet reports Starknet mainnet. Do not put private keys, seed phrases, viewing keys, notes, or proving credentials in environment variables.
+
+ShadowPay uses the Starknet Wallet API. A privacy-enabled wallet performs note discovery, proving, signing, and submission; the dApp does not receive those secrets. Wallet support is capability-dependent, so a wallet may connect while still being unable to execute STRK20 actions.
+
+## Privacy model
+
+The wallet and STRK20 pool hide in-pool transfer details from ordinary public account history. Deposits, withdrawals, transaction timing, fees, account activity outside the pool, and any data intentionally shared through an invoice remain observable. ShadowPay exports only explicitly permitted receipt metadata and does not provide a complete balance or transaction-history export.
+
+## Current limitations
+
+- The verified Starknet mainnet STRK20 pool address is still required in `.env.local`; no Sepolia or demo address is accepted.
+- A privacy-enabled wallet with Wallet API STRK20 support is required for shielded actions. Connection support for Argent and Braavos depends on their current capabilities.
+- Invoices and selective-disclosure exports are not implemented in this first slice.
+- `strk20.json` contains no evidence until three successful mainnet pool-touching transactions are manually verified.
+
 ## Mainnet acceptance criteria
 
 - [ ] Wallet connect on Starknet mainnet
@@ -41,6 +58,8 @@ Open `http://localhost:3000`.
 - [ ] Add at least three successful pool-touching hashes to `strk20.json`
 - [ ] Deploy a public demo
 - [ ] Record the three-minute demo video
+
+No mainnet transaction hashes are included until they are manually confirmed as successful `SN_MAIN` transactions touching the verified STRK20 pool.
 
 ## Evidence manifest
 
