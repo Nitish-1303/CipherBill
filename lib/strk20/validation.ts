@@ -48,3 +48,15 @@ export function validatePaymentInput(recipient: string, amount: string): string 
   if (!isValidAmount(amount)) return "Enter a positive STRK amount with up to 18 decimals.";
   return null;
 }
+
+export function baseUnitsToDecimal(value: string | bigint, decimals = 18): string {
+  const amount = typeof value === "bigint" ? value : BigInt(value);
+  if (amount < 0n || !Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+    throw new Error("Base-unit amount or decimals are invalid.");
+  }
+  if (decimals === 0) return amount.toString();
+  const padded = amount.toString().padStart(decimals + 1, "0");
+  const whole = padded.slice(0, -decimals);
+  const fraction = padded.slice(-decimals).replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole;
+}
