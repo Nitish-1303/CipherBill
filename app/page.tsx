@@ -1,4 +1,6 @@
 import { PrivatePayment } from "@/components/private-payment";
+import { InvoicePanel } from "@/components/invoice-panel";
+import { WalletConnect } from "@/components/wallet-connect";
 
 const steps = [
   ["01", "Shield", "Move STRK into a shielded balance through the live privacy pool."],
@@ -10,9 +12,9 @@ export default function Home() {
   return (
     <main>
       <nav>
-        <a className="brand" href="#top"><span>◒</span> ShadowPay</a>
+        <a className="brand" href="#top"><span>◒</span> CipherBill</a>
         <div className="nav-links"><a href="#workflow">Workflow</a><a href="#demo">Demo</a></div>
-        <button className="wallet" type="button">Connect wallet</button>
+        <WalletConnect />
       </nav>
 
       <section className="hero" id="top">
@@ -33,7 +35,19 @@ export default function Home() {
         </div>
       </section>
 
-      <footer><a className="brand" href="#top"><span>◒</span> ShadowPay</a><p>Open-source infrastructure for private commerce.</p><small>STRK20 Private Sprint · 2026</small></footer>
+      <InvoicePanel />
+
+      <section className="privacy-model">
+        <div className="section-heading"><span>Selective disclosure</span><h2>Useful privacy, honest edges.</h2></div>
+        <div className="privacy-table" role="table" aria-label="CipherBill privacy model">
+          <div role="row" className="privacy-row privacy-header"><strong>Hidden inside the pool</strong><strong>Public or observable</strong></div>
+          <div role="row" className="privacy-row"><span>In-pool sender, recipient, token and amount</span><span>Shielding deposits and withdrawals, including their public addresses and amounts</span></div>
+          <div role="row" className="privacy-row"><span>Which encrypted notes were spent and their linkage</span><span>Timing, fees and published nullifiers, which are unlinkable without a viewing key</span></div>
+          <div role="row" className="privacy-row"><span>Ordinary encrypted note values and intentionally undisclosed receipt fields</span><span>Open-note token and amounts, application-side metadata, and correlation risks from distinctive activity</span></div>
+        </div>
+      </section>
+
+      <footer><a className="brand" href="#top"><span>◒</span> CipherBill</a><p>Open-source infrastructure for private commerce.</p><small>STRK20 Private Sprint · 2026</small></footer>
     </main>
   );
 }
