@@ -58,6 +58,8 @@ export interface PrivacyTransaction {
   error?: Strk20Error;
 }
 
+export type TransactionSubmittedCallback = (transaction: PrivacyTransaction) => void;
+
 export interface ShieldedBalance {
   token: string;
   amount: string;
@@ -67,6 +69,6 @@ export interface Strk20Client {
   getBalance(): Promise<ShieldedBalance>;
   getFeeAmount(): Promise<string>;
   shield(amount: string): Promise<PrivacyTransaction>;
-  privateTransfer(request: PrivatePaymentRequest): Promise<PrivacyTransaction>;
+  privateTransfer(request: PrivatePaymentRequest, onSubmitted?: TransactionSubmittedCallback): Promise<PrivacyTransaction>;
   unshield(amount: string, recipient: string): Promise<PrivacyTransaction>;
 }

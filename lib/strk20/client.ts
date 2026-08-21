@@ -9,6 +9,7 @@ import type {
   PrivacyTransaction,
   ShieldedBalance,
   Strk20Client,
+  TransactionSubmittedCallback,
 } from "./types";
 
 /**
@@ -41,7 +42,7 @@ export class MainnetStrk20Client implements Strk20Client {
     return this.invoke("shield", [{ type: "deposit", token: this.requireConfig().tokenAddress, amount: decimalToBaseUnits(amount) }]);
   }
 
-  async privateTransfer(request: PrivatePaymentRequest): Promise<PrivacyTransaction> {
+  async privateTransfer(request: PrivatePaymentRequest, onSubmitted?: TransactionSubmittedCallback): Promise<PrivacyTransaction> {
     const config = this.requireConfig();
     return this.invoke("private_transfer", [
       {
@@ -50,7 +51,7 @@ export class MainnetStrk20Client implements Strk20Client {
         amount: decimalToBaseUnits(request.amount),
         recipient: normalizeStarknetAddress(request.recipient),
       },
-    ]);
+    ], onSubmitted);
   }
 
   async unshield(amount: string, recipient: string): Promise<PrivacyTransaction> {
@@ -68,13 +69,16 @@ export class MainnetStrk20Client implements Strk20Client {
     return config;
   }
 
-  private async invoke(action: PrivacyAction, actions: STRK20_ACTION[]): Promise<PrivacyTransaction> {
+  private async invoke(action: PrivacyAction, actions: STRK20_ACTION[], onSubmitted?: TransactionSubmittedCallback): Promise<PrivacyTransaction> {
     this.requireConfig();
     const result = await this.account.strk20InvokeTransaction(actions);
+    const submittedAt = new Date().toISOString();
+    onSubmitted?.({ action, hash: result.transaction_hash, status: "submitted", submittedAt });
     return awaitSubmittedTransaction({
       action,
       hash: result.transaction_hash,
       timeoutMs: CONFIRMATION_TIMEOUT_MS,
+      submittedAt,
       waitForReceipt: () => this.account.provider.waitForTransaction(result.transaction_hash, {
         retries: 40,
         retryInterval: 3000,

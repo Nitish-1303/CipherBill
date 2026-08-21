@@ -12,7 +12,7 @@ export default function Home() {
   return (
     <main>
       <nav>
-        <a className="brand" href="#top"><span>◒</span> ShadowPay</a>
+        <a className="brand" href="#top"><span>◒</span> CipherBill</a>
         <div className="nav-links"><a href="#workflow">Workflow</a><a href="#demo">Demo</a></div>
         <WalletConnect />
       </nav>
@@ -47,7 +47,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer><a className="brand" href="#top"><span>◒</span> ShadowPay</a><p>Open-source infrastructure for private commerce.</p><small>STRK20 Private Sprint · 2026</small></footer>
+      <footer><a className="brand" href="#top"><span>◒</span> CipherBill</a><p>Open-source infrastructure for private commerce.</p><small>STRK20 Private Sprint · 2026</small></footer>
     </main>
   );
 }

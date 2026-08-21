@@ -3,7 +3,7 @@ import "./globals.css";
 import { WalletProvider } from "@/components/wallet-provider";
 
 export const metadata: Metadata = {
-  title: "ShadowPay AI — Private payments on Starknet",
+  title: "CipherBill — Private invoices on Starknet",
   description: "Privacy-first invoicing and settlement powered by STRK20.",
 };
 

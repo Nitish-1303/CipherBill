@@ -8,6 +8,7 @@ interface AwaitSubmittedTransactionOptions<TReceipt> {
   action: PrivacyAction;
   hash: string;
   timeoutMs: number;
+  submittedAt?: string;
   waitForReceipt: () => Promise<TReceipt>;
   isReverted: (receipt: TReceipt) => boolean;
 }
@@ -26,6 +27,7 @@ export async function awaitSubmittedTransaction<TReceipt>({
   action,
   hash,
   timeoutMs,
+  submittedAt = new Date().toISOString(),
   waitForReceipt,
   isReverted,
 }: AwaitSubmittedTransactionOptions<TReceipt>): Promise<PrivacyTransaction> {
@@ -33,7 +35,7 @@ export async function awaitSubmittedTransaction<TReceipt>({
     action,
     hash,
     status: "submitted",
-    submittedAt: new Date().toISOString(),
+    submittedAt,
   };
 
   let timeout: ReturnType<typeof setTimeout> | undefined;
