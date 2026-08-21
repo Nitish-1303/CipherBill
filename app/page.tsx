@@ -39,11 +39,11 @@ export default function Home() {
 
       <section className="privacy-model">
         <div className="section-heading"><span>Selective disclosure</span><h2>Useful privacy, honest edges.</h2></div>
-        <div className="privacy-table" role="table" aria-label="ShadowPay privacy model">
+        <div className="privacy-table" role="table" aria-label="CipherBill privacy model">
           <div role="row" className="privacy-row privacy-header"><strong>Hidden inside the pool</strong><strong>Public or observable</strong></div>
-          <div role="row" className="privacy-row"><span>In-pool sender, recipient, token and amount</span><span>Deposits, withdrawals and their public addresses</span></div>
-          <div role="row" className="privacy-row"><span>Private notes used by the wallet</span><span>Timing, fees, nullifiers and app-side metadata</span></div>
-          <div role="row" className="privacy-row"><span>Invoice receipt fields shared intentionally</span><span>Distinctive amounts and channel-opening correlation risks</span></div>
+          <div role="row" className="privacy-row"><span>In-pool sender, recipient, token and amount</span><span>Shielding deposits and withdrawals, including their public addresses and amounts</span></div>
+          <div role="row" className="privacy-row"><span>Which encrypted notes were spent and their linkage</span><span>Timing, fees and published nullifiers, which are unlinkable without a viewing key</span></div>
+          <div role="row" className="privacy-row"><span>Ordinary encrypted note values and intentionally undisclosed receipt fields</span><span>Open-note token and amounts, application-side metadata, and correlation risks from distinctive activity</span></div>
         </div>
       </section>
 

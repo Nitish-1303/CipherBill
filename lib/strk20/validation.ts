@@ -3,10 +3,11 @@ import { validateAndParseAddress } from "starknet";
 const DECIMAL_AMOUNT = /^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/;
 
 export function isValidStarknetAddress(value: string): boolean {
-  if (!/^0x/i.test(value)) return false;
+  const candidate = value.trim();
+  if (!/^0x/i.test(candidate)) return false;
 
   try {
-    validateAndParseAddress(value);
+    validateAndParseAddress(candidate);
     return true;
   } catch {
     return false;
@@ -14,8 +15,17 @@ export function isValidStarknetAddress(value: string): boolean {
 }
 
 export function normalizeStarknetAddress(value: string): string {
-  if (!/^0x/i.test(value)) throw new Error("Starknet addresses must use a 0x prefix.");
-  return validateAndParseAddress(value);
+  const candidate = value.trim();
+  if (!/^0x/i.test(candidate)) throw new Error("Starknet addresses must use a 0x prefix.");
+  return validateAndParseAddress(candidate);
+}
+
+export function areSameStarknetAddress(left: string, right: string): boolean {
+  try {
+    return BigInt(normalizeStarknetAddress(left)) === BigInt(normalizeStarknetAddress(right));
+  } catch {
+    return false;
+  }
 }
 
 export function isValidAmount(value: string): boolean {

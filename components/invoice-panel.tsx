@@ -4,12 +4,13 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { createInvoice, Invoice, paymentLink, readInvoices, selectiveReceipt, writeInvoices } from "@/lib/invoices";
 import { MainnetStrk20Client } from "@/lib/strk20/client";
+import { getStarknetExplorerTransactionUrl } from "@/lib/strk20/config";
 import { useWallet } from "./wallet-provider";
 
 const emptyForm = { recipient: "", amount: "", description: "", dueDate: "" };
 
 export function InvoicePanel() {
-  const { account } = useWallet();
+  const { account, status: walletStatus, capabilities } = useWallet();
   const [form, setForm] = useState(emptyForm);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [message, setMessage] = useState("Invoice metadata stays in this browser only.");
@@ -18,6 +19,7 @@ export function InvoicePanel() {
   useEffect(() => setInvoices(readInvoices()), []);
 
   const latestInvoice = useMemo(() => invoices[0], [invoices]);
+  const walletReady = Boolean(account && walletStatus === "connected" && capabilities?.strk20);
 
   function updateInvoices(next: Invoice[]) {
     setInvoices(next);
@@ -37,21 +39,37 @@ export function InvoicePanel() {
   }
 
   async function settle(invoice: Invoice) {
-    if (!account) {
-      setMessage("Connect a privacy-enabled wallet before settling an invoice.");
+    if (!account || !walletReady) {
+      setMessage("Connect a compatible Starknet mainnet wallet before settling an invoice.");
       return;
     }
 
     setSettling(invoice.id);
-    updateInvoices(invoices.map((item) => item.id === invoice.id ? { ...item, status: "pending" } : item));
     try {
-      const transaction = await new MainnetStrk20Client(account).privateTransfer({
+      const client = new MainnetStrk20Client(account);
+      const fee = await client.getFeeAmount();
+      setMessage(`Confirm the private settlement. The recipient must be registered with STRK20. Current pool fee: ${BigInt(fee).toString()} base units.`);
+      const transaction = await client.privateTransfer({
         recipient: invoice.recipient,
         amount: invoice.amount,
         token: "STRK",
       });
-      updateInvoices(invoices.map((item) => item.id === invoice.id ? { ...item, status: "paid", transactionHash: transaction.hash } : item));
-      setMessage(`Invoice ${invoice.id} is paid after confirmed settlement.`);
+
+      const nextStatus: Invoice["status"] = transaction.status === "confirmed"
+        ? "paid"
+        : transaction.status === "submitted"
+          ? "pending"
+          : "failed";
+
+      updateInvoices(invoices.map((item) => item.id === invoice.id ? { ...item, status: nextStatus, transactionHash: transaction.hash } : item));
+
+      if (transaction.status === "confirmed") {
+        setMessage(`Invoice ${invoice.id} is paid after confirmed settlement.`);
+      } else if (transaction.status === "submitted") {
+        setMessage(`Invoice ${invoice.id} was submitted, but RPC confirmation is delayed. Keep the explorer link and do not resubmit.`);
+      } else {
+        setMessage(`Invoice ${invoice.id} settlement reverted. Its transaction hash is preserved.`);
+      }
     } catch {
       updateInvoices(invoices.map((item) => item.id === invoice.id ? { ...item, status: "failed" } : item));
       setMessage("Invoice settlement failed or was rejected. The invoice remains available to retry.");
@@ -80,6 +98,7 @@ export function InvoicePanel() {
           <label>Description<input required placeholder="Design retainer" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
           <label>Due date<input required type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} /></label>
           <button type="submit">Create invoice</button>
+          <p className="status">Private settlement requires the recipient to register their wallet with STRK20 first.</p>
         </form>
         <div className="invoice-list">
           <p className="status">{message}</p>
@@ -90,7 +109,12 @@ export function InvoicePanel() {
               <small>{invoice.id} · due {invoice.dueDate}</small>
               <div className="invoice-actions">
                 <button type="button" onClick={() => navigator.clipboard.writeText(paymentLink(invoice))}>Copy payment link</button>
-                {invoice.status !== "paid" ? <button type="button" disabled={settling === invoice.id} onClick={() => settle(invoice)}>{settling === invoice.id ? "Settling..." : "Settle privately"}</button> : <button type="button" onClick={() => downloadReceipt(invoice)}>Export receipt</button>}
+                {invoice.transactionHash ? <a className="transaction-link" href={getStarknetExplorerTransactionUrl(invoice.transactionHash)} target="_blank" rel="noreferrer">View transaction ↗</a> : null}
+                {invoice.status === "paid"
+                  ? <button type="button" onClick={() => downloadReceipt(invoice)}>Export receipt</button>
+                  : invoice.status === "pending"
+                    ? <button type="button" disabled>Awaiting confirmation</button>
+                    : <button type="button" disabled={!walletReady || settling === invoice.id} onClick={() => settle(invoice)}>{settling === invoice.id ? "Settling..." : "Settle privately"}</button>}
               </div>
             </article>
           )) : <p className="dialog-copy">No invoices yet. Draft metadata is stored locally and contains no keys, notes, proofs, or wallet history.</p>}

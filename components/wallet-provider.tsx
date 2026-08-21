@@ -7,13 +7,13 @@ import { constants, RpcProvider, walletV6, WalletAccountV6 } from "starknet";
 
 import { getStrk20Config } from "@/lib/strk20/config";
 import type { WalletCapabilities, WalletStatus } from "@/lib/strk20/types";
-
-const MINIMUM_WALLET_API_VERSION = [0, 10, 3];
+import { MINIMUM_STRK20_WALLET_API_VERSION, supportsStrk20WalletApi } from "@/lib/strk20/version";
 
 interface WalletContextValue {
   account: WalletAccountV6 | null;
   address: string | null;
   wallets: WalletWithStarknetFeatures[];
+  walletName: string | null;
   status: WalletStatus;
   error: string | null;
   capabilities: WalletCapabilities | null;
@@ -25,6 +25,7 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 export function WalletProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [wallets, setWallets] = useState<WalletWithStarknetFeatures[]>([]);
+  const [walletName, setWalletName] = useState<string | null>(null);
   const [account, setAccount] = useState<WalletAccountV6 | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [status, setStatus] = useState<WalletStatus>("disconnected");
@@ -54,7 +55,7 @@ export function WalletProvider({ children }: Readonly<{ children: React.ReactNod
       const provider = new RpcProvider({ nodeUrl: config.providerUrl });
       const walletApiVersions = await walletV6.supportedWalletApi(wallet);
       const supportedSpecs = await walletV6.supportedSpecs(wallet);
-      const supportsRequiredApi = walletApiVersions.some((version) => isAtLeastVersion(version, MINIMUM_WALLET_API_VERSION));
+      const supportsRequiredApi = walletApiVersions.some(supportsStrk20WalletApi);
       const supportsStrk20 = walletApiVersions.length > 0 && supportsRequiredApi;
 
       setCapabilities({
@@ -65,17 +66,20 @@ export function WalletProvider({ children }: Readonly<{ children: React.ReactNod
 
       if (!supportsStrk20) {
         setStatus("unsupported_wallet");
-        setError("This wallet does not advertise STRK20 Wallet API support version 0.10.3 or newer.");
+        setError(`This wallet does not advertise STRK20 Wallet API support version ${MINIMUM_STRK20_WALLET_API_VERSION} or newer.`);
         return;
       }
 
       const connectedAccount = await WalletAccountV6.connect(provider, wallet);
       const accounts = await connectedAccount.requestAccounts();
-      const chainId = await connectedAccount.provider.getChainId();
+      const [providerChainId, walletChainId] = await Promise.all([
+        connectedAccount.provider.getChainId(),
+        walletV6.requestChainId(wallet),
+      ]);
 
-      if (chainId !== constants.StarknetChainId.SN_MAIN) {
+      if (providerChainId !== constants.StarknetChainId.SN_MAIN || walletChainId !== constants.StarknetChainId.SN_MAIN) {
         setStatus("wrong_network");
-        setError("Switch your wallet to Starknet mainnet before using ShadowPay.");
+        setError("Switch your wallet to Starknet mainnet before using private payments.");
         return;
       }
 
@@ -87,6 +91,7 @@ export function WalletProvider({ children }: Readonly<{ children: React.ReactNod
 
       setAccount(connectedAccount);
       setAddress(accounts[0]);
+      setWalletName(wallet.name);
       setStatus("connected");
     } catch {
       setStatus("rejected");
@@ -97,14 +102,15 @@ export function WalletProvider({ children }: Readonly<{ children: React.ReactNod
   function disconnect() {
     setAccount(null);
     setAddress(null);
+    setWalletName(null);
     setStatus("disconnected");
     setError(null);
-      setCapabilities(null);
+    setCapabilities(null);
   }
 
   const value = useMemo(
-    () => ({ account, address, wallets, status, error, capabilities, connect, disconnect }),
-    [account, address, wallets, status, error, capabilities],
+    () => ({ account, address, wallets, walletName, status, error, capabilities, connect, disconnect }),
+    [account, address, wallets, walletName, status, error, capabilities],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
@@ -114,14 +120,4 @@ export function useWallet() {
   const value = useContext(WalletContext);
   if (!value) throw new Error("useWallet must be used inside WalletProvider");
   return value;
-}
-
-function isAtLeastVersion(version: string, minimum: number[]) {
-  const parsed = version.split(".").map((part) => Number.parseInt(part, 10));
-  for (let index = 0; index < minimum.length; index += 1) {
-    const current = parsed[index] ?? 0;
-    if (current > minimum[index]) return true;
-    if (current < minimum[index]) return false;
-  }
-  return true;
 }

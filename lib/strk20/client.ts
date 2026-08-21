@@ -1,7 +1,8 @@
 import { WalletAccountV6, type STRK20_ACTION } from "starknet";
 
 import { CONFIRMATION_TIMEOUT_MS, getStrk20Config } from "./config";
-import { decimalToBaseUnits, normalizeStarknetAddress } from "./validation";
+import { awaitSubmittedTransaction } from "./transaction";
+import { areSameStarknetAddress, decimalToBaseUnits, normalizeStarknetAddress } from "./validation";
 import type {
   PrivatePaymentRequest,
   PrivacyAction,
@@ -21,7 +22,7 @@ export class MainnetStrk20Client implements Strk20Client {
   async getBalance(): Promise<ShieldedBalance> {
     const config = this.requireConfig();
     const balances = await this.account.strk20Balances([config.tokenAddress]);
-    const balance = balances.find((entry) => entry.token.toLowerCase() === config.tokenAddress.toLowerCase());
+    const balance = balances.find((entry) => areSameStarknetAddress(entry.token, config.tokenAddress));
 
     return { token: config.tokenAddress, amount: balance?.balance ?? "0" };
   }
@@ -70,32 +71,15 @@ export class MainnetStrk20Client implements Strk20Client {
   private async invoke(action: PrivacyAction, actions: STRK20_ACTION[]): Promise<PrivacyTransaction> {
     this.requireConfig();
     const result = await this.account.strk20InvokeTransaction(actions);
-    const receipt = await Promise.race([
-      this.account.provider.waitForTransaction(result.transaction_hash, {
+    return awaitSubmittedTransaction({
+      action,
+      hash: result.transaction_hash,
+      timeoutMs: CONFIRMATION_TIMEOUT_MS,
+      waitForReceipt: () => this.account.provider.waitForTransaction(result.transaction_hash, {
         retries: 40,
         retryInterval: 3000,
       }),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), CONFIRMATION_TIMEOUT_MS)),
-    ]);
-
-    if (!receipt) {
-      return {
-        action,
-        hash: result.transaction_hash,
-        status: "submitted",
-        submittedAt: new Date().toISOString(),
-      };
-    }
-
-    if ("execution_status" in receipt && receipt.execution_status === "REVERTED") {
-      throw new Error("The mainnet transaction reverted.");
-    }
-
-    return {
-      action,
-      hash: result.transaction_hash,
-      status: "confirmed",
-      submittedAt: new Date().toISOString(),
-    };
+      isReverted: (receipt) => "execution_status" in receipt && receipt.execution_status === "REVERTED",
+    });
   }
 }

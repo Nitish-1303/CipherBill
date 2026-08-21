@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { decimalToBaseUnits, isValidAmount, isValidStarknetAddress, normalizeStarknetAddress, validatePaymentInput } from "./validation";
+import { areSameStarknetAddress, decimalToBaseUnits, isValidAmount, isValidStarknetAddress, normalizeStarknetAddress, validatePaymentInput } from "./validation";
 
 describe("STRK20 input validation", () => {
   it("accepts canonical-looking Starknet addresses", () => {
     expect(isValidStarknetAddress("0x1234")).toBe(true);
     expect(isValidStarknetAddress("1234")).toBe(false);
-    expect(normalizeStarknetAddress("0x1234")).toMatch(/^0x0+1234$/);
+    const normalized = normalizeStarknetAddress("  0x1234  ");
+    expect(normalized).toMatch(/^0x0+1234$/);
+    expect(normalizeStarknetAddress(normalized)).toBe(normalized);
+    expect(areSameStarknetAddress("0x1234", normalized)).toBe(true);
   });
 
   it("accepts positive amounts with at most 18 decimals", () => {
@@ -19,6 +22,7 @@ describe("STRK20 input validation", () => {
   it("converts STRK amounts to base units", () => {
     expect(decimalToBaseUnits("1.5")).toBe("1500000000000000000");
     expect(decimalToBaseUnits("0.000000000000000001")).toBe("1");
+    expect(decimalToBaseUnits("9007199254740993")).toBe("9007199254740993000000000000000000");
   });
 
   it("returns a safe validation message for invalid payment input", () => {

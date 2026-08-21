@@ -9,14 +9,15 @@ function shortenAddress(address: string) {
 }
 
 export function WalletConnect() {
-  const { address, wallets, status, error, connect, disconnect } = useWallet();
+  const { address, wallets, walletName, status, error, capabilities, connect, disconnect } = useWallet();
   const [open, setOpen] = useState(false);
 
   if (address && status === "connected") {
     return (
-      <button className="wallet" type="button" onClick={disconnect} title="Disconnect wallet">
-        {shortenAddress(address)}
-      </button>
+      <div className="wallet-status-block">
+        <div className="wallet-status-line"><span className="wallet-name">{walletName ?? "Connected wallet"}</span><button className="wallet" type="button" onClick={disconnect} title="Disconnect wallet">{shortenAddress(address)}</button></div>
+        <small className="wallet-capability-status">Starknet Mainnet · Wallet API {capabilities?.walletApiVersions.join(", ") ?? "unknown"} · STRK20 supported</small>
+      </div>
     );
   }
 
@@ -44,6 +45,7 @@ export function WalletConnect() {
                 ))}
               </div>
             ) : <p className="dialog-copy">Install a Starknet wallet with STRK20 Wallet API support, then reload this page.</p>}
+            {capabilities ? <p className={capabilities.strk20 ? "wallet-capability-ok" : "error-message"} role="status">Wallet API {capabilities.walletApiVersions.join(", ") || "unavailable"} · STRK20 {capabilities.strk20 ? "supported" : "unsupported"}</p> : null}
             {error ? <p className="error-message" role="alert">{error}</p> : null}
           </section>
         </div>
