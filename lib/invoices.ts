@@ -1,23 +1,28 @@
 import { MAINNET_CHAIN_ID } from "./strk20/config";
 import { decimalToBaseUnits, normalizeStarknetAddress } from "./strk20/validation";
+import { createInvoiceLifecycle, normalizeInvoiceLifecycle, type InvoiceLifecycle } from "./invoice-lifecycle";
 
-export const INVOICE_SCHEMA_VERSION = 1 as const;
-export const MAX_ENCODED_INVOICE_LENGTH = 2_048;
-export const MAX_INVOICE_JSON_BYTES = 1_200;
+export const INVOICE_SCHEMA_VERSION = 2 as const;
+export const MAX_ENCODED_INVOICE_LENGTH = 8_192;
+export const MAX_INVOICE_JSON_BYTES = 6_000;
 export const MAX_TOKEN_DECIMALS = 18;
 export const MAX_INVOICE_LIFETIME_MS = 365 * 24 * 60 * 60 * 1_000;
+export const MAX_INVOICE_MILESTONES = 8;
 
 const CHECKSUM_BYTES = 16;
 const STORAGE_KEY = "cipherbill.invoices.v2";
+const LEGACY_STORAGE_KEY = "cipherbill.invoices.v1";
 const SECRET_FIELD = /(api.?key|private.?key|seed|mnemonic|viewing.?key|secret)/i;
 const SECRET_VALUE = /\b(api key|private key|seed phrase|mnemonic|viewing key)\b/i;
 const ALLOWED_FIELDS = new Set([
   "version", "invoiceId", "merchantName", "recipientAddress", "tokenAddress", "tokenSymbol",
   "tokenDecimals", "amount", "description", "referenceNumber", "createdAt", "expiresAt", "network",
+  "allowPartialPayments", "milestones",
 ]);
+const ALLOWED_MILESTONE_FIELDS = new Set(["id", "label", "amount"]);
 
-export interface ShareableInvoiceV1 {
-  version: typeof INVOICE_SCHEMA_VERSION;
+interface ShareableInvoiceV1 {
+  version: 1;
   invoiceId: string;
   merchantName: string;
   recipientAddress: string;
@@ -32,6 +37,30 @@ export interface ShareableInvoiceV1 {
   network: typeof MAINNET_CHAIN_ID;
 }
 
+export interface InvoiceMilestone {
+  id: string;
+  label: string;
+  amount: string;
+}
+
+export interface ShareableInvoice {
+  version: typeof INVOICE_SCHEMA_VERSION;
+  invoiceId: string;
+  merchantName: string;
+  recipientAddress: string;
+  tokenAddress: string;
+  tokenSymbol: string;
+  tokenDecimals: number;
+  amount: string;
+  description: string;
+  referenceNumber?: string;
+  createdAt: string;
+  expiresAt: string;
+  network: typeof MAINNET_CHAIN_ID;
+  allowPartialPayments: boolean;
+  milestones?: InvoiceMilestone[];
+}
+
 export interface CreateInvoiceInput {
   merchantName: string;
   recipientAddress: string;
@@ -42,12 +71,15 @@ export interface CreateInvoiceInput {
   description: string;
   referenceNumber?: string;
   expiresAt: string;
+  allowPartialPayments?: boolean;
+  milestones?: InvoiceMilestone[];
 }
 
 export interface LocalInvoiceRecord {
-  invoice: ShareableInvoiceV1;
+  invoice: ShareableInvoice;
   encodedPayload: string;
   savedAt: string;
+  lifecycle: InvoiceLifecycle;
 }
 
 export type InvoiceErrorCode =
@@ -55,8 +87,8 @@ export type InvoiceErrorCode =
   | "invalid_address" | "invalid_decimals" | "invalid_amount" | "unsafe_field";
 
 export type InvoiceDecodeResult =
-  | { status: "valid"; invoice: ShareableInvoiceV1 }
-  | { status: "expired"; invoice: ShareableInvoiceV1; message: string }
+  | { status: "valid"; invoice: ShareableInvoice }
+  | { status: "expired"; invoice: ShareableInvoice; message: string }
   | { status: "invalid"; code: InvoiceErrorCode; message: string };
 
 class InvoiceValidationError extends Error {
@@ -69,7 +101,7 @@ export function createShareableInvoice(
   input: CreateInvoiceInput,
   now = new Date(),
   createId = () => `inv_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`,
-): ShareableInvoiceV1 {
+): ShareableInvoice {
   const invoice = validateInvoice({
     version: INVOICE_SCHEMA_VERSION,
     invoiceId: createId(),
@@ -84,6 +116,8 @@ export function createShareableInvoice(
     createdAt: now.toISOString(),
     expiresAt: input.expiresAt,
     network: MAINNET_CHAIN_ID,
+    allowPartialPayments: Boolean(input.allowPartialPayments),
+    milestones: input.milestones?.length ? input.milestones : undefined,
   });
 
   if (Date.parse(invoice.expiresAt) <= now.getTime()) {
@@ -92,7 +126,7 @@ export function createShareableInvoice(
   return invoice;
 }
 
-export async function encodeInvoicePayload(invoice: ShareableInvoiceV1): Promise<string> {
+export async function encodeInvoicePayload(invoice: ShareableInvoice): Promise<string> {
   const canonical = validateInvoice(invoice);
   const jsonBytes = new TextEncoder().encode(JSON.stringify(canonical));
   if (jsonBytes.byteLength > MAX_INVOICE_JSON_BYTES) {
@@ -163,10 +197,10 @@ export function readInvoices(storage?: Pick<Storage, "getItem">): LocalInvoiceRe
   try {
     const target = storage ?? (typeof window === "undefined" ? null : window.localStorage);
     if (!target) return [];
-    const raw = target.getItem(STORAGE_KEY);
+    const raw = target.getItem(STORAGE_KEY) ?? target.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isLocalInvoiceRecord) : [];
+    return Array.isArray(parsed) ? parsed.map(parseLocalInvoiceRecord).filter(isPresent) : [];
   } catch {
     return [];
   }
@@ -183,7 +217,7 @@ export function writeInvoices(invoices: LocalInvoiceRecord[], storage?: Pick<Sto
   }
 }
 
-function validateInvoice(value: unknown): ShareableInvoiceV1 {
+function validateInvoice(value: unknown): ShareableInvoice {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new InvoiceValidationError("malformed", "Invoice payload must be an object.");
   }
@@ -192,11 +226,14 @@ function validateInvoice(value: unknown): ShareableInvoiceV1 {
   if (keys.some((key) => SECRET_FIELD.test(key))) {
     throw new InvoiceValidationError("unsafe_field", "Secret-like fields are not allowed in invoice links.");
   }
-  if (keys.some((key) => !ALLOWED_FIELDS.has(key))) {
-    throw new InvoiceValidationError("unsafe_field", "Invoice payload contains unsupported fields.");
-  }
-  if (record.version !== INVOICE_SCHEMA_VERSION) {
+  if (record.version !== 1 && record.version !== INVOICE_SCHEMA_VERSION) {
     throw new InvoiceValidationError("unsupported_version", "This invoice schema version is not supported.");
+  }
+  const allowedFields = record.version === 1
+    ? new Set([...ALLOWED_FIELDS].filter((key) => key !== "allowPartialPayments" && key !== "milestones"))
+    : ALLOWED_FIELDS;
+  if (keys.some((key) => !allowedFields.has(key))) {
+    throw new InvoiceValidationError("unsafe_field", "Invoice payload contains unsupported fields.");
   }
 
   const invoiceId = requiredText(record.invoiceId, "Invoice ID", 64, /^[A-Za-z0-9_-]+$/);
@@ -207,6 +244,9 @@ function validateInvoice(value: unknown): ShareableInvoiceV1 {
   const amount = requiredText(record.amount, "Amount", 96);
   const createdAt = isoTimestamp(record.createdAt, "Created timestamp");
   const expiresAt = isoTimestamp(record.expiresAt, "Expiration timestamp");
+  if (record.version === INVOICE_SCHEMA_VERSION && typeof record.allowPartialPayments !== "boolean") {
+    throw new InvoiceValidationError("incomplete", "Partial-payment setting is required.");
+  }
 
   if (SECRET_VALUE.test(`${merchantName} ${description} ${referenceNumber ?? ""}`)) {
     throw new InvoiceValidationError("unsafe_field", "Secret-like content must not be placed in an invoice link.");
@@ -233,6 +273,10 @@ function validateInvoice(value: unknown): ShareableInvoiceV1 {
     throw new InvoiceValidationError("invalid_amount", "Invoice amount is invalid for the token decimals.");
   }
 
+  const milestones = record.version === INVOICE_SCHEMA_VERSION
+    ? validateMilestones(record.milestones, record.tokenDecimals as number, amount)
+    : undefined;
+
   const createdMs = Date.parse(createdAt);
   const expiresMs = Date.parse(expiresAt);
   if (expiresMs <= createdMs || expiresMs - createdMs > MAX_INVOICE_LIFETIME_MS) {
@@ -253,7 +297,46 @@ function validateInvoice(value: unknown): ShareableInvoiceV1 {
     createdAt,
     expiresAt,
     network: MAINNET_CHAIN_ID,
+    allowPartialPayments: record.version === INVOICE_SCHEMA_VERSION ? record.allowPartialPayments as boolean : false,
+    ...(milestones ? { milestones } : {}),
   };
+}
+
+function validateMilestones(value: unknown, decimals: number, invoiceAmount: string): InvoiceMilestone[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.length || value.length > MAX_INVOICE_MILESTONES) {
+    throw new InvoiceValidationError("incomplete", `Milestones must contain 1 to ${MAX_INVOICE_MILESTONES} items.`);
+  }
+
+  const seen = new Set<string>();
+  const milestones = value.map((candidate, index) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      throw new InvoiceValidationError("incomplete", `Milestone ${index + 1} is invalid.`);
+    }
+    const record = candidate as Record<string, unknown>;
+    if (Object.keys(record).some((key) => SECRET_FIELD.test(key) || !ALLOWED_MILESTONE_FIELDS.has(key))) {
+      throw new InvoiceValidationError("unsafe_field", "Milestones contain unsupported or secret-like fields.");
+    }
+    const id = requiredText(record.id, `Milestone ${index + 1} ID`, 40, /^[A-Za-z0-9_-]+$/);
+    const label = requiredText(record.label, `Milestone ${index + 1} label`, 80);
+    const milestoneAmount = requiredText(record.amount, `Milestone ${index + 1} amount`, 96);
+    if (SECRET_VALUE.test(label)) throw new InvoiceValidationError("unsafe_field", "Secret-like content must not be placed in milestones.");
+    if (seen.has(id)) throw new InvoiceValidationError("incomplete", "Milestone IDs must be unique.");
+    seen.add(id);
+    try {
+      decimalToBaseUnits(milestoneAmount, decimals);
+    } catch {
+      throw new InvoiceValidationError("invalid_amount", `Milestone ${index + 1} amount is invalid.`);
+    }
+    return { id, label, amount: milestoneAmount };
+  });
+
+  const milestoneTotal = milestones.reduce((sum, milestone) => sum + BigInt(decimalToBaseUnits(milestone.amount, decimals)), 0n);
+  const expectedTotal = BigInt(decimalToBaseUnits(invoiceAmount, decimals));
+  if (milestoneTotal !== expectedTotal) {
+    throw new InvoiceValidationError("invalid_amount", "Milestone amounts must equal the invoice total exactly.");
+  }
+  return milestones;
 }
 
 function requiredText(value: unknown, label: string, maxLength: number, pattern?: RegExp): string {
@@ -309,15 +392,30 @@ function constantTimeEqual(left: string, right: string): boolean {
   return difference === 0;
 }
 
-function isLocalInvoiceRecord(value: unknown): value is LocalInvoiceRecord {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Partial<LocalInvoiceRecord>;
+function parseLocalInvoiceRecord(value: unknown): LocalInvoiceRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<LocalInvoiceRecord> & { invoice?: ShareableInvoice | ShareableInvoiceV1 };
   try {
-    return typeof record.encodedPayload === "string"
-      && record.encodedPayload.length <= MAX_ENCODED_INVOICE_LENGTH
-      && typeof record.savedAt === "string"
-      && Boolean(validateInvoice(record.invoice));
+    if (
+      typeof record.encodedPayload !== "string"
+      || record.encodedPayload.length > MAX_ENCODED_INVOICE_LENGTH
+      || typeof record.savedAt !== "string"
+      || Number.isNaN(Date.parse(record.savedAt))
+    ) return null;
+    const invoice = validateInvoice(record.invoice);
+    return {
+      invoice,
+      encodedPayload: record.encodedPayload,
+      savedAt: record.savedAt,
+      lifecycle: record.lifecycle
+        ? normalizeInvoiceLifecycle(record.lifecycle, createInvoiceLifecycle("active", new Date(record.savedAt)))
+        : createInvoiceLifecycle("active", new Date(record.savedAt)),
+    };
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isPresent<T>(value: T | null): value is T {
+  return value !== null;
 }
