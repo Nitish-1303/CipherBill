@@ -1,6 +1,6 @@
-# ShadowPay Mainnet Testing
+# CipherBill Mainnet Testing
 
-Use a dedicated privacy-enabled Starknet wallet and a small amount of STRK for gas, pool fees, approval, shielding, and testing. Keep all wallet approvals manual. Never provide ShadowPay with a seed phrase, private key, recovery phrase, viewing key, password, or signing credential.
+Use a dedicated privacy-enabled Starknet wallet and a small amount of STRK for gas, pool fees, approval, shielding, and testing. Keep all wallet approvals manual. Never provide CipherBill with a seed phrase, private key, recovery phrase, viewing key, password, or signing credential.
 
 ## Before Testing
 
@@ -38,7 +38,7 @@ Use a dedicated privacy-enabled Starknet wallet and a small amount of STRK for g
 
 ## Evidence
 
-- [ ] Verify every accepted hash is on Starknet mainnet, succeeded, touched the official STRK20 pool, and represents a real ShadowPay flow.
+- [ ] Verify every accepted hash is on Starknet mainnet, succeeded, touched the official STRK20 pool, and represents a real CipherBill flow.
 - [ ] Record three confirmed pool-touching hashes only after verification.
 - [ ] Add verified hashes to the root `strk20.json`; never add placeholders, testnet hashes, or failed transactions.
 - [ ] Confirm no wallet credentials, viewing keys, notes, proofs, or complete transaction history are included in exported receipts.

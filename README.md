@@ -1,4 +1,4 @@
-# ShadowPay AI
+# CipherBill
 
 Privacy-first invoicing and settlement for independent workers and global teams, built for the [STRK20 Private Sprint](https://strk20.starknet.io/hackathon).
 
@@ -8,7 +8,7 @@ Builder: Yeluru Nitish · Telegram: `nikki_1303` · Category: Payments · Networ
 
 ## Problem
 
-Public payment rails leak balances, counterparties and commercial relationships. ShadowPay uses STRK20 shielded balances and private transfers while retaining a selective-disclosure path for invoices, accounting and disputes.
+Public payment rails leak balances, counterparties and commercial relationships. CipherBill uses STRK20 shielded balances and private transfers while retaining a selective-disclosure path for invoices, accounting and disputes.
 
 ## Core flow
 
@@ -42,13 +42,13 @@ Open `http://localhost:3000`.
 
 Copy `.env.example` to `.env.local` and provide a public Starknet RPC endpoint and the verified STRK20 mainnet pool address. The application keeps shield, balance, and private-transfer actions disabled until both values are present and the connected wallet reports Starknet mainnet. Do not put private keys, seed phrases, viewing keys, notes, or proving credentials in environment variables.
 
-ShadowPay uses the Starknet Wallet API. A privacy-enabled wallet performs note discovery, proving, signing, and submission; the dApp does not receive those secrets. Wallet support is capability-dependent, so a wallet may connect while still being unable to execute STRK20 actions.
+CipherBill uses the Starknet Wallet API. A privacy-enabled wallet performs note discovery, proving, signing, and submission; the dApp does not receive those secrets. Wallet support is capability-dependent, so a wallet may connect while still being unable to execute STRK20 actions.
 
-Shielding is a separate public ERC-20 approval followed by a private deposit, so the wallet may show two prompts. Private transfers run between registered pool users; a recipient who has not registered must onboard in their privacy-enabled wallet first. Newly created change notes may need roughly ten blocks before they can be spent again. Private transaction envelopes may be submitted by a relayer, so ShadowPay does not attribute a private payment to the envelope sender.
+Shielding is a separate public ERC-20 approval followed by a private deposit, so the wallet may show two prompts. Private transfers run between registered pool users; a recipient who has not registered must onboard in their privacy-enabled wallet first. Newly created change notes may need roughly ten blocks before they can be spent again. Private transaction envelopes may be submitted by a relayer, so CipherBill does not attribute a private payment to the envelope sender.
 
 ## Privacy model
 
-The wallet and STRK20 pool hide in-pool transfer details from ordinary public account history. Deposits, withdrawals, transaction timing, fees, account activity outside the pool, and any data intentionally shared through an invoice remain observable. ShadowPay exports only explicitly permitted receipt metadata and does not provide a complete balance or transaction-history export.
+The wallet and STRK20 pool hide in-pool transfer details from ordinary public account history. Deposits, withdrawals, transaction timing, fees, account activity outside the pool, and any data intentionally shared through an invoice remain observable. CipherBill exports only explicitly permitted receipt metadata and does not provide a complete balance or transaction-history export.
 
 ## Current limitations
 

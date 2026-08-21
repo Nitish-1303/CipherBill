@@ -6,12 +6,12 @@ import {
   invoicePaymentUrl,
   MAX_ENCODED_INVOICE_LENGTH,
   readInvoices,
-  type ShareableInvoiceV1,
+  type ShareableInvoice,
 } from "./invoices";
 import { decimalToBaseUnits } from "./strk20/validation";
 
-const invoice: ShareableInvoiceV1 = {
-  version: 1,
+const invoice: ShareableInvoice = {
+  version: 2,
   invoiceId: "inv_test_001",
   merchantName: "Cipher Studio",
   recipientAddress: "0x1234",
@@ -24,6 +24,11 @@ const invoice: ShareableInvoiceV1 = {
   createdAt: "2028-01-01T00:00:00.000Z",
   expiresAt: "2028-02-01T00:00:00.000Z",
   network: "SN_MAIN",
+  allowPartialPayments: true,
+  milestones: [
+    { id: "discovery", label: "Discovery", amount: "4503599627370496.500000000000000000" },
+    { id: "delivery", label: "Delivery", amount: "4503599627370496.500000000000000001" },
+  ],
 };
 
 describe("shareable invoice payloads", () => {
@@ -55,10 +60,21 @@ describe("shareable invoice payloads", () => {
   });
 
   it("rejects unsupported versions and missing required fields", async () => {
-    await expect(decodeInvoicePayload(await signRaw({ ...invoice, version: 2 }))).resolves.toMatchObject({ status: "invalid", code: "unsupported_version" });
-    const missingMerchant: Partial<ShareableInvoiceV1> = { ...invoice };
+    await expect(decodeInvoicePayload(await signRaw({ ...invoice, version: 3 }))).resolves.toMatchObject({ status: "invalid", code: "unsupported_version" });
+    const missingMerchant: Partial<ShareableInvoice> = { ...invoice };
     delete missingMerchant.merchantName;
     await expect(decodeInvoicePayload(await signRaw(missingMerchant))).resolves.toMatchObject({ status: "invalid", code: "incomplete" });
+  });
+
+  it("keeps schema v1 payment links portable after the v2 upgrade", async () => {
+    const legacy = { ...invoice, version: 1 } as Record<string, unknown>;
+    delete legacy.allowPartialPayments;
+    delete legacy.milestones;
+    const decoded = await decodeInvoicePayload(await signRaw(legacy), Date.parse("2028-01-15T00:00:00.000Z"));
+    expect(decoded.status).toBe("valid");
+    if (decoded.status === "valid") {
+      expect(decoded.invoice).toMatchObject({ version: 2, allowPartialPayments: false });
+    }
   });
 
   it("rejects malformed and oversized payloads", async () => {
@@ -86,9 +102,32 @@ describe("shareable invoice payloads", () => {
     await expect(decodeInvoicePayload(await signRaw(unsafe))).resolves.toMatchObject({ status: "invalid", code: "unsafe_field" });
   });
 
+  it("requires milestone totals to equal the invoice total", async () => {
+    const invalid = { ...invoice, milestones: [{ id: "only", label: "Only", amount: "1" }] };
+    await expect(decodeInvoicePayload(await signRaw(invalid))).resolves.toMatchObject({ status: "invalid", code: "invalid_amount" });
+  });
+
+  it("rejects too many milestones and secret-like nested fields", async () => {
+    const tooMany = { ...invoice, milestones: Array.from({ length: 9 }, (_, index) => ({ id: `m${index}`, label: `Part ${index}`, amount: "1" })) };
+    await expect(decodeInvoicePayload(await signRaw(tooMany))).resolves.toMatchObject({ status: "invalid", code: "incomplete" });
+    const unsafe = { ...invoice, milestones: [{ id: "m1", label: "Seed phrase", amount: invoice.amount }] };
+    await expect(decodeInvoicePayload(await signRaw(unsafe))).resolves.toMatchObject({ status: "invalid", code: "unsafe_field" });
+  });
+
   it("handles corrupt local history safely", () => {
     expect(readInvoices({ getItem: () => "{broken" })).toEqual([]);
     expect(readInvoices({ getItem: () => JSON.stringify([{ invoice: null }]) })).toEqual([]);
+  });
+
+  it("migrates legacy local history with a safe active lifecycle", async () => {
+    const legacy = { ...invoice, version: 1 } as Record<string, unknown>;
+    delete legacy.allowPartialPayments;
+    delete legacy.milestones;
+    const encodedPayload = await signRaw(legacy);
+    const stored = JSON.stringify([{ invoice: legacy, encodedPayload, savedAt: "2028-01-01T00:00:00.000Z" }]);
+    const records = readInvoices({ getItem: (key) => key.endsWith(".v1") ? stored : null });
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ invoice: { version: 2 }, lifecycle: { status: "active", payments: [] } });
   });
 });
 
