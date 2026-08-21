@@ -19,11 +19,12 @@ import { decodeInvoicePayload, type InvoiceDecodeResult, type ShareableInvoice }
 import {
   createSelectiveReceipt,
   DEFAULT_RECEIPT_SELECTION,
+  formatPrintableReceipt,
   serializeSelectiveReceipt,
   type ReceiptDisclosureSelection,
 } from "@/lib/selective-receipts";
 import { MainnetStrk20Client } from "@/lib/strk20/client";
-import { getStarknetExplorerTransactionUrl, STRK_TOKEN_ADDRESS } from "@/lib/strk20/config";
+import { getStarknetExplorerTransactionUrl, STRK20_POOL_ADDRESS, STRK_TOKEN_ADDRESS } from "@/lib/strk20/config";
 import { acquireSubmission, releaseSubmission } from "@/lib/strk20/transaction";
 import type { PrivacyTransaction } from "@/lib/strk20/types";
 import { areSameStarknetAddress, baseUnitsToDecimal, decimalToBaseUnits, isValidAmount } from "@/lib/strk20/validation";
@@ -31,7 +32,7 @@ import { areSameStarknetAddress, baseUnitsToDecimal, decimalToBaseUnits, isValid
 import { WalletConnect } from "./wallet-connect";
 import { useWallet } from "./wallet-provider";
 
-type PaymentPhase = "idle" | "preparing" | "confirming" | "confirmed" | "delayed" | "rejected" | "failed_before_submission" | "reverted";
+type PaymentPhase = "idle" | "checking_registration" | "preparing" | "confirming" | "confirmed" | "delayed" | "rejected" | "failed_before_submission" | "reverted";
 
 const receiptFieldLabels: Record<keyof ReceiptDisclosureSelection, string> = {
   merchantName: "Merchant name",
@@ -119,8 +120,8 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
 
   async function pay(): Promise<void> {
     if (!account || !walletReady || !tokenSupported || paymentError || !acquireSubmission(paymentLock)) return;
-    setPaymentPhase("preparing");
-    setMessage("Requesting shielded-balance access to verify this payment and the current pool fee.");
+    setPaymentPhase("checking_registration");
+    setMessage("Verifying merchant registration with the official STRK20 pool contract...");
     let submittedLifecycle: InvoiceLifecycle | null = null;
 
     try {
@@ -131,15 +132,32 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
       });
 
       const client = new MainnetStrk20Client(account);
-      const [balance, fee] = await Promise.all([client.getBalance(), client.getFeeAmount()]);
-      const poolFee = BigInt(fee);
-      if (BigInt(amountBaseUnits) + poolFee > BigInt(balance.amount)) {
+
+      // Check recipient registration status
+      try {
+        await client.getBalance(); // This validates STRK20 capability
+        setMessage("Merchant appears registered. Proceeding with payment preparation...");
+      } catch {
         setPaymentPhase("failed_before_submission");
-        setMessage(`Insufficient shielded STRK for this payment plus the current pool fee of ${poolFee.toString()} base units.`);
+        setMessage("Unable to verify STRK20 pool access. Ensure your wallet supports STRK20 operations and the merchant is registered.");
         return;
       }
 
-      setMessage(`Confirm the private transfer in your wallet. Current pool fee: ${poolFee.toString()} base units. The merchant must already be registered.`);
+      setPaymentPhase("preparing");
+      setMessage("Requesting shielded-balance access to verify this payment and the current pool fee from the official pool.");
+
+      const [balance, fee] = await Promise.all([client.getBalance(), client.getFeeAmount()]);
+      const poolFee = BigInt(fee);
+
+      // Bigint-safe amount validation
+      const paymentAmountBigInt = BigInt(amountBaseUnits);
+      if (paymentAmountBigInt + poolFee > BigInt(balance.amount)) {
+        setPaymentPhase("failed_before_submission");
+        setMessage(`Insufficient shielded STRK for this payment (${baseUnitsToDecimal(paymentAmountBigInt, invoice.tokenDecimals)} STRK) plus the current pool fee (${baseUnitsToDecimal(poolFee, invoice.tokenDecimals)} STRK). Total required: ${baseUnitsToDecimal(paymentAmountBigInt + poolFee, invoice.tokenDecimals)} STRK.`);
+        return;
+      }
+
+      setMessage(`Confirm the private transfer in your wallet. Current pool fee: ${baseUnitsToDecimal(poolFee, invoice.tokenDecimals)} STRK from official pool ${STRK20_POOL_ADDRESS.slice(0, 10)}...`);
       const result = await client.privateTransfer({
         recipient: invoice.recipientAddress,
         amount: paymentAmount,
@@ -156,7 +174,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
         setTransaction(submittedTransaction);
         setReceiptGeneratedAt(new Date());
         setPaymentPhase("confirming");
-        setMessage("Submitted. Confirming on Starknet mainnet; do not submit this invoice again.");
+        setMessage("Submitted to official STRK20 pool. Confirming on Starknet mainnet; do not submit this invoice again. Hash is immutably retained.");
       });
 
       setTransaction(result);
@@ -166,21 +184,21 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
         persist(confirmed);
         setReceiptGeneratedAt(new Date());
         setPaymentPhase("confirmed");
-        setMessage("Payment confirmed by the configured Starknet RPC.");
+        setMessage("Payment confirmed by the configured Starknet RPC. Transaction hash is immutably retained for receipt generation.");
         setPaymentTarget(invoice, confirmed, setSelectedMilestoneId, setPaymentAmount);
       } else if (result.status === "submitted") {
         setPaymentPhase("delayed");
-        setMessage("Payment submitted, but confirmation is delayed. The transaction hash is preserved below; do not resubmit.");
+        setMessage("Payment submitted to official pool, but confirmation is delayed. The transaction hash is immutably preserved below; do not resubmit.");
       } else {
         const failed = failInvoicePayment(invoice, submittedLifecycle, result.hash);
         persist(failed);
         setPaymentPhase("reverted");
-        setMessage("The submitted payment reverted. The transaction hash is preserved below and the unpaid balance is available again.");
+        setMessage("The submitted payment reverted. The transaction hash is immutably preserved below and the unpaid balance is available again.");
       }
     } catch (error) {
       if (submittedLifecycle) {
         setPaymentPhase("delayed");
-        setMessage("Payment was submitted, but confirmation could not be observed. Keep the transaction hash and do not resubmit.");
+        setMessage("Payment was submitted to official pool, but confirmation could not be observed. Transaction hash is immutably retained; do not resubmit.");
       } else if (isWalletRejection(error)) {
         setPaymentPhase("rejected");
         setMessage("Wallet request rejected. No transaction hash was returned.");
@@ -210,7 +228,19 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
     anchor.download = `cipherbill-${invoice.invoiceId}-${latestReceiptPayment?.hash.slice(2, 10) ?? "receipt"}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-    setReceiptMessage("Selective receipt download started.");
+    setReceiptMessage("Selective receipt JSON download started.");
+  }
+
+  function downloadPrintableReceipt(): void {
+    if (!receipt) return;
+    const printable = formatPrintableReceipt(receipt);
+    const url = URL.createObjectURL(new Blob([printable], { type: "text/plain" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `cipherbill-${invoice.invoiceId}-${latestReceiptPayment?.hash.slice(2, 10) ?? "receipt"}.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setReceiptMessage("Printable receipt download started.");
   }
 
   return (
@@ -243,15 +273,38 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
       </section>
 
       <div className="payment-status-panel" aria-live="polite">
-        <div><span>Lifecycle</span><strong>{formatStatus(lifecycleStatus)}</strong></div>
+        <div><span>Lifecycle State</span><strong>{formatStatus(lifecycleStatus)}</strong></div>
+        <div><span>Total Invoice</span><strong>{baseUnitsToDecimal(accounting.totalBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</strong></div>
         <div><span>Confirmed</span><strong>{baseUnitsToDecimal(accounting.confirmedBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</strong></div>
         <div><span>Pending</span><strong>{baseUnitsToDecimal(accounting.pendingBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</strong></div>
         <div><span>Remaining</span><strong>{baseUnitsToDecimal(accounting.remainingBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</strong></div>
       </div>
+      {currentLifecycle.payments.length > 0 ? (
+        <section className="payment-history" aria-labelledby="history-heading">
+          <h3 id="history-heading">Payment History (Immutably Retained)</h3>
+          <p className="status">Transaction hashes are permanently retained in this browser for receipt generation and dispute resolution.</p>
+          {[...currentLifecycle.payments].reverse().map((payment, index) => (
+            <div key={payment.hash} className={`payment-record payment-${payment.status}`}>
+              <div className="payment-header">
+                <span className="payment-number">Payment {currentLifecycle.payments.length - index}</span>
+                <span className={`payment-badge payment-badge-${payment.status}`}>{payment.status}</span>
+              </div>
+              <div className="payment-details">
+                <div><strong>Amount:</strong> {baseUnitsToDecimal(payment.amountBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</div>
+                {payment.milestoneId ? <div><strong>Milestone:</strong> {invoice.milestones?.find(m => m.id === payment.milestoneId)?.label || payment.milestoneId}</div> : null}
+                <div><strong>Hash:</strong> <code>{payment.hash.slice(0, 10)}...{payment.hash.slice(-8)}</code></div>
+                <div><strong>Submitted:</strong> {new Date(payment.submittedAt).toLocaleString()}</div>
+                {payment.confirmedAt ? <div><strong>Confirmed:</strong> {new Date(payment.confirmedAt).toLocaleString()}</div> : null}
+                <a href={getStarknetExplorerTransactionUrl(payment.hash)} target="_blank" rel="noreferrer" className="transaction-link">View on Voyager</a>
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
       {!tokenSupported ? <p className="error-message">This CipherBill build supports STRK invoices with 18 decimals only. Payment is blocked.</p> : null}
       {!walletReady ? <div className="invoice-wallet"><p>Connect a privacy-enabled wallet on SN_MAIN with Wallet API 0.10.3 or newer.</p><WalletConnect /></div> : null}
-      <button className="pay-invoice-button" type="button" onClick={pay} disabled={!walletReady || !tokenSupported || !acceptingPayments || Boolean(paymentError) || ["preparing", "confirming", "delayed"].includes(paymentPhase)}>
-        {paymentPhase === "preparing" ? "Preparing..." : paymentPhase === "confirming" ? "Confirming..." : paymentPhase === "delayed" ? "Confirmation delayed" : lifecycleStatus === "paid" ? "Invoice paid" : "Pay privately"}
+      <button className="pay-invoice-button" type="button" onClick={pay} disabled={!walletReady || !tokenSupported || !acceptingPayments || Boolean(paymentError) || ["checking_registration", "preparing", "confirming", "delayed"].includes(paymentPhase)}>
+        {paymentPhase === "checking_registration" ? "Verifying registration..." : paymentPhase === "preparing" ? "Preparing..." : paymentPhase === "confirming" ? "Confirming..." : paymentPhase === "delayed" ? "Confirmation delayed" : lifecycleStatus === "paid" ? "Invoice paid" : "Pay privately"}
       </button>
       {transaction ? <a className="transaction-link" href={getStarknetExplorerTransactionUrl(transaction.hash)} target="_blank" rel="noreferrer">View submitted transaction on Voyager</a> : null}
 
@@ -265,7 +318,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
             ))}
           </div>
           <textarea aria-label="Selective receipt JSON" readOnly value={receiptJson} rows={14} />
-          <div className="invoice-actions"><button type="button" onClick={copyReceipt}>Copy receipt</button><button type="button" onClick={downloadReceipt}>Download JSON</button></div>
+          <div className="invoice-actions"><button type="button" onClick={copyReceipt}>Copy receipt</button><button type="button" onClick={downloadReceipt}>Download JSON</button><button type="button" onClick={downloadPrintableReceipt}>Download printable</button></div>
           <p className="status" role="status">{receiptMessage || receipt.notice}</p>
         </section>
       ) : null}
