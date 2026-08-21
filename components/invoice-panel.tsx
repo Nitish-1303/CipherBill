@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+import { activateInvoice, cancelInvoice, createInvoiceLifecycle, deriveInvoiceStatus } from "@/lib/invoice-lifecycle";
 import {
   createShareableInvoice,
   encodeInvoicePayload,
@@ -19,6 +20,8 @@ const emptyForm = {
   description: "",
   referenceNumber: "",
   expiresAt: "",
+  allowPartialPayments: false,
+  milestones: [] as Array<{ id: string; label: string; amount: string }>,
 };
 
 interface GeneratedInvoice {
@@ -46,6 +49,8 @@ export function InvoicePanel() {
     setCreating(true);
 
     try {
+      const submitter = (event.nativeEvent as SubmitEvent).submitter;
+      const saveAsDraft = submitter instanceof HTMLButtonElement && submitter.value === "draft";
       const invoice = createShareableInvoice({
         merchantName: form.merchantName,
         recipientAddress: form.recipientAddress,
@@ -56,19 +61,46 @@ export function InvoicePanel() {
         description: form.description,
         referenceNumber: form.referenceNumber || undefined,
         expiresAt: new Date(form.expiresAt).toISOString(),
+        allowPartialPayments: form.allowPartialPayments,
+        milestones: form.milestones.length ? form.milestones : undefined,
       });
       const encodedPayload = await encodeInvoicePayload(invoice);
-      const record: LocalInvoiceRecord = { invoice, encodedPayload, savedAt: new Date().toISOString() };
+      const record: LocalInvoiceRecord = {
+        invoice,
+        encodedPayload,
+        savedAt: new Date().toISOString(),
+        lifecycle: createInvoiceLifecycle(saveAsDraft ? "draft" : "active"),
+      };
       const url = invoicePaymentUrl(encodedPayload);
       persist([record, ...invoices]);
-      setGenerated({ record, url });
+      setGenerated(saveAsDraft ? null : { record, url });
       setForm(emptyForm);
-      setMessage(`Invoice ${invoice.invoiceId} created. Verify the URL preview before sharing it.`);
+      setMessage(saveAsDraft
+        ? `Draft ${invoice.invoiceId} saved locally. Activate it before sharing.`
+        : `Invoice ${invoice.invoiceId} activated. Verify the URL preview before sharing it.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Invoice could not be created.");
     } finally {
       setCreating(false);
     }
+  }
+
+  function addMilestone() {
+    if (form.milestones.length >= 8) return;
+    let next = 1;
+    while (form.milestones.some((milestone) => milestone.id === `m${next}`)) next += 1;
+    setForm({ ...form, milestones: [...form.milestones, { id: `m${next}`, label: "", amount: "" }] });
+  }
+
+  function updateMilestone(index: number, field: "label" | "amount", value: string) {
+    setForm({
+      ...form,
+      milestones: form.milestones.map((milestone, position) => position === index ? { ...milestone, [field]: value } : milestone),
+    });
+  }
+
+  function removeMilestone(index: number) {
+    setForm({ ...form, milestones: form.milestones.filter((_, position) => position !== index) });
   }
 
   async function copy(value: string) {
@@ -77,6 +109,27 @@ export function InvoicePanel() {
       setMessage("Invoice link copied.");
     } catch {
       setMessage("Copy was unavailable. Select and copy the URL manually.");
+    }
+  }
+
+  function activate(record: LocalInvoiceRecord) {
+    try {
+      const updated = { ...record, lifecycle: activateInvoice(record.lifecycle) };
+      persist(invoices.map((candidate) => candidate.invoice.invoiceId === record.invoice.invoiceId ? updated : candidate));
+      setGenerated({ record: updated, url: invoicePaymentUrl(updated.encodedPayload) });
+      setMessage(`Invoice ${record.invoice.invoiceId} is active and ready to share.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Invoice could not be activated.");
+    }
+  }
+
+  function cancel(record: LocalInvoiceRecord) {
+    try {
+      const updated = { ...record, lifecycle: cancelInvoice(record.lifecycle) };
+      persist(invoices.map((candidate) => candidate.invoice.invoiceId === record.invoice.invoiceId ? updated : candidate));
+      setMessage("Invoice marked cancelled in this browser. Portable links cannot be remotely revoked without a shared backend.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Invoice could not be cancelled.");
     }
   }
 
@@ -104,18 +157,39 @@ export function InvoicePanel() {
           <label>Merchant Starknet address<input required maxLength={66} placeholder="0x..." value={form.recipientAddress} onChange={(event) => setForm({ ...form, recipientAddress: event.target.value })} /></label>
           <div className="form-row">
             <label>Amount<input required inputMode="decimal" maxLength={96} placeholder="2.5" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label>
-            <label>Token<input value="STRK · 18 decimals" readOnly /></label>
+            <label>Token<input value="STRK - 18 decimals" readOnly /></label>
           </div>
           <label>Description<input required maxLength={160} placeholder="Design retainer" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
           <label>Reference number (optional)<input maxLength={64} placeholder="PO-1042" value={form.referenceNumber} onChange={(event) => setForm({ ...form, referenceNumber: event.target.value })} /></label>
           <label>Expires at<input required type="datetime-local" value={form.expiresAt} onChange={(event) => setForm({ ...form, expiresAt: event.target.value })} /></label>
-          <button type="submit" disabled={creating}>{creating ? "Generating..." : "Generate private payment link"}</button>
-          <p className="status">Network: SN_MAIN · Token address and payment amount are locked into the link.</p>
-          <p className="status">Never put private keys, seed phrases, viewing keys, RPC keys, or confidential notes in invoice fields.</p>
+          <label className="checkbox-label"><input type="checkbox" checked={form.allowPartialPayments} onChange={(event) => setForm({ ...form, allowPartialPayments: event.target.checked })} />Allow partial payments</label>
+          <fieldset className="milestone-editor">
+            <legend>Milestones (optional, maximum 8)</legend>
+            {form.milestones.map((milestone, index) => (
+              <div className="milestone-row" key={milestone.id}>
+                <input aria-label={`Milestone ${index + 1} label`} required maxLength={80} placeholder="Milestone label" value={milestone.label} onChange={(event) => updateMilestone(index, "label", event.target.value)} />
+                <input aria-label={`Milestone ${index + 1} amount`} required inputMode="decimal" placeholder="Amount" value={milestone.amount} onChange={(event) => updateMilestone(index, "amount", event.target.value)} />
+                <button type="button" onClick={() => removeMilestone(index)} aria-label={`Remove milestone ${index + 1}`}>Remove</button>
+              </div>
+            ))}
+            <button type="button" onClick={addMilestone} disabled={form.milestones.length >= 8}>Add milestone</button>
+            <p className="status">Milestone amounts must equal the invoice total exactly.</p>
+          </fieldset>
+          <div className="invoice-submit-row">
+            <button type="submit" value="draft" disabled={creating}>{creating ? "Saving..." : "Save draft"}</button>
+            <button type="submit" value="active" disabled={creating}>{creating ? "Generating..." : "Activate and generate link"}</button>
+          </div>
+          <p className="status">Network: SN_MAIN. Token address and payment amount are locked into the link.</p>
+          <p className="status">Never put private keys, seed phrases, viewing keys, RPC keys, wallet history, notes, or proofs in invoice fields.</p>
+          <aside className="composer-privacy-preview">
+            <strong>Link privacy preview</strong>
+            <p>Anyone with the URL can read the merchant name and address, amount, description, reference, expiration, payment policy, and every milestone entered above.</p>
+            <p>The link contains no payer identity or wallet state. Its checksum detects edits but does not authenticate the merchant.</p>
+          </aside>
         </form>
 
         <div className="invoice-list">
-          <p className="status" role="status">{message}</p>
+          <p className="status" role="status" aria-live="polite">{message}</p>
           {generated ? (
             <article className="invoice-item invoice-preview">
               <div><strong>Generated link</strong><span>schema v{generated.record.invoice.version}</span></div>
@@ -123,24 +197,27 @@ export function InvoicePanel() {
               <textarea aria-label="Generated invoice URL" readOnly value={generated.url} rows={5} />
               <div className="invoice-actions">
                 <button type="button" onClick={() => copy(generated.url)}>Copy link</button>
-                <a className="transaction-link" href={generated.url}>Open invoice →</a>
+                <a className="transaction-link" href={generated.url}>Open invoice</a>
               </div>
-              <small>Integrity checksum included. This is not a merchant signature.</small>
+              <small>Integrity checksum included. This is not authentication or a merchant signature.</small>
             </article>
           ) : null}
 
           <div className="history-heading"><strong>Local history</strong><button type="button" onClick={clearHistory} disabled={!invoices.length}>Clear history</button></div>
-          <p className="status">Local history is demo convenience only. It is not proof of payment or on-chain confirmation.</p>
+          <p className="status">Local history is application metadata only. It is not proof of payment or shared merchant state.</p>
           {invoices.length ? invoices.map((record) => {
             const url = invoicePaymentUrl(record.encodedPayload);
+            const status = deriveInvoiceStatus(record.invoice, record.lifecycle);
             return (
               <article className="invoice-item" key={record.invoice.invoiceId}>
-                <div><strong>{record.invoice.amount} {record.invoice.tokenSymbol}</strong><span>created</span></div>
+                <div><strong>{record.invoice.amount} {record.invoice.tokenSymbol}</strong><span>{status}</span></div>
                 <p>{record.invoice.description}</p>
-                <small>{record.invoice.invoiceId} · expires {new Date(record.invoice.expiresAt).toLocaleString()}</small>
+                <small>{record.invoice.invoiceId} - expires {new Date(record.invoice.expiresAt).toLocaleString()}</small>
                 <div className="invoice-actions">
-                  <button type="button" onClick={() => copy(url)}>Copy link</button>
-                  <a className="transaction-link" href={url}>Open</a>
+                  {status === "draft" ? <button type="button" onClick={() => activate(record)}>Activate</button> : null}
+                  {["active", "partially_paid"].includes(status) ? <button type="button" onClick={() => copy(url)}>Copy link</button> : null}
+                  {["active", "partially_paid", "confirming", "paid"].includes(status) ? <a className="transaction-link" href={url}>Open</a> : null}
+                  {["draft", "active", "partially_paid"].includes(status) ? <button type="button" onClick={() => cancel(record)}>Cancel locally</button> : null}
                   <button type="button" onClick={() => removeInvoice(record.invoice.invoiceId)}>Delete local entry</button>
                 </div>
               </article>
