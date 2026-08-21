@@ -127,6 +127,7 @@ export function PrivatePayment() {
           <button type="button" onClick={shield} disabled={!account || !isValidShieldAmount() || shielding}>{shielding ? "..." : "Shield"}</button>
         </div>
       </div>
+      <p className="status">Shielding requires two wallet prompts: ERC-20 approval, then the private deposit.</p>
       <p className="status">{shieldMessage}</p>
       <form onSubmit={submit} aria-busy={submitting}>
         <label>
