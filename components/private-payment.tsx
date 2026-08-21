@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { MainnetStrk20Client } from "@/lib/strk20/client";
-import { decimalToBaseUnits, validatePaymentInput } from "@/lib/strk20/validation";
+import { decimalToBaseUnits, isValidAmount, isValidStarknetAddress, validatePaymentInput } from "@/lib/strk20/validation";
 
 import { useWallet } from "./wallet-provider";
 
@@ -21,6 +21,10 @@ export function PrivatePayment() {
   const [shieldedBalance, setShieldedBalance] = useState<string | null>(null);
   const [shieldMessage, setShieldMessage] = useState("Shielded balance unavailable until a wallet is connected.");
   const [shielding, setShielding] = useState(false);
+  const [unshieldAmount, setUnshieldAmount] = useState("");
+  const [unshieldRecipient, setUnshieldRecipient] = useState("");
+  const [unshielding, setUnshielding] = useState(false);
+  const [unshieldMessage, setUnshieldMessage] = useState("Unshielding makes the recipient, token and amount public.");
   const valid = useMemo(() => !validatePaymentInput(form.recipient, form.amount), [form]);
 
   useEffect(() => {
@@ -43,7 +47,10 @@ export function PrivatePayment() {
     setShieldMessage("Confirm the shield deposit in your wallet...");
 
     try {
-      const transaction = await new MainnetStrk20Client(account).shield(shieldAmount);
+      const client = new MainnetStrk20Client(account);
+      const fee = await client.getFeeAmount();
+      setShieldMessage(`Confirm shield deposit in your wallet. Current pool fee: ${fee} base units.`);
+      const transaction = await client.shield(shieldAmount);
       setShieldMessage(`Shield confirmed: ${transaction.hash.slice(0, 10)}...`);
       const balance = await new MainnetStrk20Client(account).getBalance();
       setShieldedBalance(balance.amount);
@@ -52,6 +59,22 @@ export function PrivatePayment() {
       setShieldMessage("The shield was rejected, failed, or could not be confirmed.");
     } finally {
       setShielding(false);
+    }
+  }
+
+  async function unshield() {
+    if (!account || !isValidAmount(unshieldAmount) || !isValidStarknetAddress(unshieldRecipient)) return;
+    setUnshielding(true);
+    setUnshieldMessage("Confirm the public withdrawal in your wallet...");
+    try {
+      const transaction = await new MainnetStrk20Client(account).unshield(unshieldAmount, unshieldRecipient);
+      setUnshieldMessage(`Public withdrawal confirmed: ${transaction.hash.slice(0, 10)}...`);
+      setUnshieldAmount("");
+      setUnshieldRecipient("");
+    } catch {
+      setUnshieldMessage("The withdrawal was rejected, failed, or could not be confirmed.");
+    } finally {
+      setUnshielding(false);
     }
   }
 
@@ -144,6 +167,15 @@ export function PrivatePayment() {
       <p className="status">{message}</p>
       {txHash ? <a className="transaction-link" href={`https://voyager.online/tx/${txHash}`} target="_blank" rel="noreferrer">View confirmed transaction ↗</a> : null}
       {address ? <small className="wallet-note">Connected account: {address.slice(0, 8)}...{address.slice(-6)}</small> : null}
+      <div className="unshield-box">
+        <span className="field-caption">Unshield to a public address</span>
+        <div className="form-row">
+          <input aria-label="Unshield amount" inputMode="decimal" placeholder="Amount" value={unshieldAmount} onChange={(event) => setUnshieldAmount(event.target.value)} />
+          <input aria-label="Public recipient address" placeholder="0x..." value={unshieldRecipient} onChange={(event) => setUnshieldRecipient(event.target.value)} />
+        </div>
+        <button type="button" onClick={unshield} disabled={!account || !isValidAmount(unshieldAmount) || !isValidStarknetAddress(unshieldRecipient) || unshielding}>{unshielding ? "Processing..." : "Unshield publicly"}</button>
+        <p className="status">{unshieldMessage}</p>
+      </div>
     </section>
   );
 }

@@ -3,6 +3,7 @@ node_modules
 out
 .env
 .env.local
+.claude/
 *.log
 *.tsbuildinfo
 .DS_Store

@@ -1,12 +1,27 @@
-const STARKNET_ADDRESS = /^0x[0-9a-fA-F]{1,64}$/;
+import { validateAndParseAddress } from "starknet";
+
 const DECIMAL_AMOUNT = /^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/;
 
 export function isValidStarknetAddress(value: string): boolean {
-  return STARKNET_ADDRESS.test(value);
+  if (!/^0x/i.test(value)) return false;
+
+  try {
+    validateAndParseAddress(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeStarknetAddress(value: string): string {
+  if (!/^0x/i.test(value)) throw new Error("Starknet addresses must use a 0x prefix.");
+  return validateAndParseAddress(value);
 }
 
 export function isValidAmount(value: string): boolean {
-  return DECIMAL_AMOUNT.test(value) && Number(value) > 0;
+  if (!DECIMAL_AMOUNT.test(value)) return false;
+  const [whole, fraction = ""] = value.split(".");
+  return BigInt(`${whole}${fraction.padEnd(18, "0")}`) > 0n;
 }
 
 export function decimalToBaseUnits(value: string, decimals = 18): string {

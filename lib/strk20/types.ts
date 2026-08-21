@@ -17,6 +17,20 @@ export type Strk20ErrorCode =
   | "submission_failed"
   | "confirmation_failed";
 
+export type WalletStatus =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "unsupported_wallet"
+  | "wrong_network"
+  | "rejected";
+
+export interface WalletCapabilities {
+  walletApiVersions: string[];
+  supportedSpecs: string[];
+  strk20: boolean;
+}
+
 export interface Strk20Error {
   code: Strk20ErrorCode;
   message: string;
@@ -51,6 +65,7 @@ export interface ShieldedBalance {
 
 export interface Strk20Client {
   getBalance(): Promise<ShieldedBalance>;
+  getFeeAmount(): Promise<string>;
   shield(amount: string): Promise<PrivacyTransaction>;
   privateTransfer(request: PrivatePaymentRequest): Promise<PrivacyTransaction>;
   unshield(amount: string, recipient: string): Promise<PrivacyTransaction>;

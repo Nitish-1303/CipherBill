@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { decimalToBaseUnits, isValidAmount, isValidStarknetAddress, validatePaymentInput } from "./validation";
+import { decimalToBaseUnits, isValidAmount, isValidStarknetAddress, normalizeStarknetAddress, validatePaymentInput } from "./validation";
 
 describe("STRK20 input validation", () => {
   it("accepts canonical-looking Starknet addresses", () => {
     expect(isValidStarknetAddress("0x1234")).toBe(true);
     expect(isValidStarknetAddress("1234")).toBe(false);
+    expect(normalizeStarknetAddress("0x1234")).toMatch(/^0x0+1234$/);
   });
 
   it("accepts positive amounts with at most 18 decimals", () => {

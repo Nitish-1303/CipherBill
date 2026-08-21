@@ -1,7 +1,7 @@
 import { WalletAccountV6, type STRK20_ACTION } from "starknet";
 
-import { getStrk20Config } from "./config";
-import { decimalToBaseUnits } from "./validation";
+import { CONFIRMATION_TIMEOUT_MS, getStrk20Config } from "./config";
+import { decimalToBaseUnits, normalizeStarknetAddress } from "./validation";
 import type {
   PrivatePaymentRequest,
   PrivacyAction,
@@ -26,6 +26,16 @@ export class MainnetStrk20Client implements Strk20Client {
     return { token: config.tokenAddress, amount: balance?.balance ?? "0" };
   }
 
+  async getFeeAmount(): Promise<string> {
+    const config = this.requireConfig();
+    const result = await this.account.provider.callContract({
+      contractAddress: config.poolAddress,
+      entrypoint: "get_fee_amount",
+      calldata: [],
+    });
+    return result[0] ?? "0";
+  }
+
   async shield(amount: string): Promise<PrivacyTransaction> {
     return this.invoke("shield", [{ type: "deposit", token: this.requireConfig().tokenAddress, amount: decimalToBaseUnits(amount) }]);
   }
@@ -37,7 +47,7 @@ export class MainnetStrk20Client implements Strk20Client {
         type: "transfer",
         token: config.tokenAddress,
         amount: decimalToBaseUnits(request.amount),
-        recipient: request.recipient,
+        recipient: normalizeStarknetAddress(request.recipient),
       },
     ]);
   }
@@ -45,7 +55,7 @@ export class MainnetStrk20Client implements Strk20Client {
   async unshield(amount: string, recipient: string): Promise<PrivacyTransaction> {
     const config = this.requireConfig();
     return this.invoke("unshield", [
-      { type: "withdraw", token: config.tokenAddress, amount: decimalToBaseUnits(amount), recipient },
+      { type: "withdraw", token: config.tokenAddress, amount: decimalToBaseUnits(amount), recipient: normalizeStarknetAddress(recipient) },
     ]);
   }
 
@@ -60,10 +70,22 @@ export class MainnetStrk20Client implements Strk20Client {
   private async invoke(action: PrivacyAction, actions: STRK20_ACTION[]): Promise<PrivacyTransaction> {
     this.requireConfig();
     const result = await this.account.strk20InvokeTransaction(actions);
-    const receipt = await this.account.provider.waitForTransaction(result.transaction_hash, {
-      retries: 400,
-      retryInterval: 3000,
-    });
+    const receipt = await Promise.race([
+      this.account.provider.waitForTransaction(result.transaction_hash, {
+        retries: 40,
+        retryInterval: 3000,
+      }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), CONFIRMATION_TIMEOUT_MS)),
+    ]);
+
+    if (!receipt) {
+      return {
+        action,
+        hash: result.transaction_hash,
+        status: "submitted",
+        submittedAt: new Date().toISOString(),
+      };
+    }
 
     if ("execution_status" in receipt && receipt.execution_status === "REVERTED") {
       throw new Error("The mainnet transaction reverted.");
