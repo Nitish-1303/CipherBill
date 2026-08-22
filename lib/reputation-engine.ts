@@ -462,7 +462,7 @@ function computeHistoryRoot(credentials: PrivateSettlementCredential[]): bigint 
 }
 
 function pedersenCommit(value: bigint, blinding: bigint): CurvePoint {
-  return ec.starkCurve.ProjectivePoint.BASE.multiply(mod(value, CURVE_ORDER)).add(PEDERSEN_H.multiply(blinding));
+  return multiplyCurvePoint(ec.starkCurve.ProjectivePoint.BASE, value).add(multiplyCurvePoint(PEDERSEN_H, blinding));
 }
 
 function createLinearProof(domain: bigint, statement: CurvePoint, witness: bigint, transcript: bigint[], suppliedNonce?: bigint): LinearKnowledgeProof {
@@ -476,7 +476,7 @@ function verifyLinearProof(domain: bigint, statement: CurvePoint, proof: LinearK
   const noncePoint = pointFromFelts(proof.nonceCommitment, "ZK nonce commitment");
   const response = requireCurveScalar(proof.response, true, "ZK proof response");
   const challenge = linearChallenge(domain, statement, noncePoint, transcript);
-  return PEDERSEN_H.multiply(response).equals(noncePoint.add(statement.multiply(challenge)));
+  return multiplyCurvePoint(PEDERSEN_H, response).equals(noncePoint.add(multiplyCurvePoint(statement, challenge)));
 }
 
 function linearChallenge(domain: bigint, statement: CurvePoint, noncePoint: CurvePoint, transcript: bigint[]): bigint {
@@ -515,7 +515,7 @@ function verifyAttestationSignature(attestation: ReputationAttestation): boolean
   const noncePoint = pointFromFelts(attestation.signature.nonceCommitment, "Attestation signature nonce");
   const response = requireCurveScalar(attestation.signature.response, true, "Attestation signature response");
   const challenge = attestationSignatureChallenge(attestation, publicKey, noncePoint);
-  return ec.starkCurve.ProjectivePoint.BASE.multiply(response).equals(noncePoint.add(publicKey.multiply(challenge)));
+  return multiplyCurvePoint(ec.starkCurve.ProjectivePoint.BASE, response).equals(noncePoint.add(multiplyCurvePoint(publicKey, challenge)));
 }
 
 function attestationSignatureChallenge(
@@ -679,5 +679,10 @@ function randomScalar(): bigint { return ec.starkCurve.utils.normPrivateKeyToSca
 function hashElements(values: bigint[]): bigint { return BigInt(hash.computePoseidonHashOnElements(values)); }
 function mod(value: bigint, modulus: bigint): bigint { const remainder = value % modulus; return remainder >= 0n ? remainder : remainder + modulus; }
 function toHex(value: bigint): string { return `0x${value.toString(16)}`; }
+
+function multiplyCurvePoint(point: CurvePoint, scalar: bigint): CurvePoint {
+  const normalized = mod(scalar, CURVE_ORDER);
+  return normalized === 0n ? ec.starkCurve.ProjectivePoint.ZERO : point.multiply(normalized);
+}
 
 type CurvePoint = ReturnType<typeof ec.starkCurve.ProjectivePoint.BASE.multiply>;

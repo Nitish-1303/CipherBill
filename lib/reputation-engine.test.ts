@@ -75,6 +75,23 @@ describe("zero-knowledge vendor reputation engine", () => {
     expect(created.attestation.proof.scoreRelation.response).toMatch(/^0x/);
   });
 
+  it("supports zero-valued late and disputed aggregates without weakening verification", () => {
+    const cleanHistory = credentials.slice(0, 6);
+    const created = createReputationProof({
+      merchantAddress,
+      credentials: cleanHistory,
+      attestorId: "cipherbill.test-attestor",
+      attestorPrivateKey: authority.privateKey,
+      validityDays: 30,
+    }, issuedAt, entropy);
+    expect(aggregatePrivateSettlements(cleanHistory, issuedAt)).toMatchObject({ late: 0, disputed: 0, score: 636 });
+    expect(verifyReputationProof(created.attestation, { trustedAttestor: authority.publicKey, now: issuedAt })).toMatchObject({
+      cryptographicallyValid: true,
+      attestorTrusted: true,
+      current: true,
+    });
+  });
+
   it("verifies the optional private opening without publishing it", () => {
     const created = bundle();
     expect(verifyReputationOpening(created)).toBe(true);

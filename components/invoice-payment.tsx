@@ -36,6 +36,7 @@ import { acquireSubmission, releaseSubmission } from "@/lib/strk20/transaction";
 import type { PrivacyTransaction } from "@/lib/strk20/types";
 import { areSameStarknetAddress, baseUnitsToDecimal, decimalToBaseUnits, isValidAmount } from "@/lib/strk20/validation";
 
+import { ReputationBadge } from "./reputation-badge";
 import { WalletConnect } from "./wallet-connect";
 import { useWallet } from "./wallet-provider";
 
@@ -426,6 +427,7 @@ function InvoiceDetails({
       <nav className="pay-nav"><Link className="brand" href="/"><span aria-hidden="true">CB</span> CipherBill</Link><span className="network-badge">SN_MAIN - Starknet Mainnet</span></nav>
       <section className="pay-shell">
         <div className="pay-heading"><span className="eyebrow">Invoice {invoice.invoiceId}</span><h1>{invoice.merchantName}</h1><p>{invoice.description}</p></div>
+        <div className="reputation-public-row"><span>Verify merchant reliability before payment</span><ReputationBadge context="public" merchantAddress={invoice.recipientAddress} attestation={invoice.reputationProof} /></div>
         <div className="invoice-amount"><strong>{invoice.amount}</strong><span>{invoice.tokenSymbol}</span></div>
         <dl className="invoice-facts">
           <div><dt>Merchant address</dt><dd><code title={invoice.recipientAddress}>{shortAddress}</code><button type="button" onClick={copyAddress}>Copy full address</button></dd></div>
@@ -451,7 +453,7 @@ function InvoiceDetails({
         <aside className="privacy-preview">
           <strong>Privacy preview</strong>
           <div className="privacy-preview-grid">
-            <div><span>Visible in this link</span><p>Merchant identity and address, token, amount, description, reference, milestones, dates, and payment policy.</p></div>
+            <div><span>Visible in this link</span><p>Merchant identity and address, token, amount, description, reference, milestones, dates, payment policy, and any attached public reputation attestation.</p></div>
             <div><span>Hidden in a private transfer</span><p>In-pool sender, recipient, token, amount, spent-note linkage, and encrypted note values.</p></div>
             <div><span>Still public or observable</span><p>Deposits, withdrawals, timing, fees, nullifiers, open-note values, this app&apos;s metadata, and distinctive-activity correlation.</p></div>
           </div>

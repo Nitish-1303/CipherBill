@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+import { ReputationBadge } from "@/components/reputation-badge";
 import { activateInvoice, cancelInvoice, createInvoiceLifecycle, deriveInvoiceStatus } from "@/lib/invoice-lifecycle";
 import {
   createShareableInvoice,
@@ -12,7 +13,9 @@ import {
   readInvoices,
   writeInvoices,
 } from "@/lib/invoices";
+import { readReputationAttestation, verifyReputationProof, type ReputationAttestation } from "@/lib/reputation-engine";
 import { STRK_TOKEN_ADDRESS } from "@/lib/strk20/config";
+import { areSameStarknetAddress } from "@/lib/strk20/validation";
 
 import { EphemeralLinkGenerator } from "./ephemeral-badge";
 
@@ -39,9 +42,13 @@ export function InvoicePanel() {
   const [generated, setGenerated] = useState<GeneratedInvoice | null>(null);
   const [ephemeralInvoice, setEphemeralInvoice] = useState<ShareableInvoice | null>(null);
   const [creating, setCreating] = useState(false);
+  const [reputationAttestation, setReputationAttestation] = useState<ReputationAttestation | null>(null);
   const [message, setMessage] = useState("Create a self-contained link that can be opened on another device.");
 
-  useEffect(() => setInvoices(readInvoices()), []);
+  useEffect(() => {
+    setInvoices(readInvoices());
+    setReputationAttestation(readReputationAttestation());
+  }, []);
 
   function persist(next: LocalInvoiceRecord[]) {
     setInvoices(next);
@@ -68,6 +75,7 @@ export function InvoicePanel() {
         expiresAt: new Date(form.expiresAt).toISOString(),
         allowPartialPayments: form.ephemeral ? false : form.allowPartialPayments,
         milestones: !form.ephemeral && form.milestones.length ? form.milestones : undefined,
+        reputationProof: getCurrentMerchantProof(reputationAttestation, form.recipientAddress),
       });
       if (form.ephemeral) {
         if (saveAsDraft) throw new Error("Ephemeral invoices cannot be drafts because their capability key is generated only once.");
@@ -162,9 +170,32 @@ export function InvoicePanel() {
     setMessage("Local invoice history cleared. Shared links remain independent of this browser.");
   }
 
+  async function updateReputationAttestation(nextAttestation: ReputationAttestation | null): Promise<void> {
+    const updatedRecords = await Promise.all(invoices.map(async (record) => {
+      if (nextAttestation && !areSameStarknetAddress(nextAttestation.merchantAddress, record.invoice.recipientAddress)) return record;
+      const invoiceWithoutProof = { ...record.invoice };
+      delete invoiceWithoutProof.reputationProof;
+      const invoice = nextAttestation ? { ...invoiceWithoutProof, reputationProof: nextAttestation } : invoiceWithoutProof;
+      return { ...record, invoice, encodedPayload: await encodeInvoicePayload(invoice) };
+    }));
+    setReputationAttestation(nextAttestation);
+    persist(updatedRecords);
+    if (generated) {
+      const updatedGenerated = updatedRecords.find((record) => record.invoice.invoiceId === generated.record.invoice.invoiceId);
+      setGenerated(updatedGenerated ? { record: updatedGenerated, url: invoicePaymentUrl(updatedGenerated.encodedPayload) } : null);
+    }
+    setMessage(nextAttestation
+      ? "Public ZK reputation proof attached to matching local invoice links. Redistribute regenerated URLs; previously shared URLs do not change."
+      : "Reputation proof removed from local invoice links. Previously shared URLs remain independent.");
+  }
+
   return (
     <section className="invoice-panel" id="invoices">
       <div className="section-heading"><span>Shareable invoicing</span><h2>Create once. Pay privately from another device.</h2></div>
+      <div className="reputation-dashboard-row">
+        <div><span>Merchant trust layer</span><p>Publish a verifiable credit score without publishing the invoices behind it.</p></div>
+        <ReputationBadge context="merchant" records={invoices} attestation={reputationAttestation} onAttestationChange={updateReputationAttestation} />
+      </div>
       <div className="invoice-grid">
         <form className="invoice-form" onSubmit={submit} aria-busy={creating}>
           <label>Merchant display name<input required maxLength={80} placeholder="Cipher Studio" value={form.merchantName} onChange={(event) => setForm({ ...form, merchantName: event.target.value })} /></label>
@@ -243,4 +274,16 @@ export function InvoicePanel() {
       </div>
     </section>
   );
+}
+
+function getCurrentMerchantProof(attestation: ReputationAttestation | null, merchantAddress: string): ReputationAttestation | undefined {
+  if (!attestation) return undefined;
+  try {
+    const verification = verifyReputationProof(attestation, { now: new Date() });
+    return verification.cryptographicallyValid && verification.current && areSameStarknetAddress(attestation.merchantAddress, merchantAddress)
+      ? attestation
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
