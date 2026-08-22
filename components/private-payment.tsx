@@ -9,6 +9,7 @@ import type { PrivacyTransaction } from "@/lib/strk20/types";
 import { decimalToBaseUnits, isValidAmount, isValidStarknetAddress, validatePaymentInput } from "@/lib/strk20/validation";
 
 import { useWallet } from "./wallet-provider";
+import { DirectoryModal, type DirectorySelection } from "./directory-modal";
 
 type FormState = { recipient: string; amount: string; memo: string };
 
@@ -32,6 +33,8 @@ export function PrivatePayment() {
   const [unshielding, setUnshielding] = useState(false);
   const [unshieldMessage, setUnshieldMessage] = useState("No public withdrawal submitted.");
   const [unshieldTransaction, setUnshieldTransaction] = useState<PrivacyTransaction | null>(null);
+  const [directoryOpen, setDirectoryOpen] = useState(false);
+  const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
   const balanceLock = useRef(false);
   const shieldLock = useRef(false);
   const transferLock = useRef(false);
@@ -168,7 +171,10 @@ export function PrivatePayment() {
         setMessage("The submitted private transfer reverted. Its transaction hash is preserved below.");
       }
 
-      if (transaction.status !== "failed") setForm(initialState);
+      if (transaction.status !== "failed") {
+        setForm(initialState);
+        setSelectedAlias(null);
+      }
     } catch {
       setMessage("The transfer was rejected, the recipient may not be registered, or submission failed before a transaction hash was returned. No sensitive wallet data was stored.");
     } finally {
@@ -195,12 +201,15 @@ export function PrivatePayment() {
       {shieldTransaction ? <a className="transaction-link" href={getStarknetExplorerTransactionUrl(shieldTransaction.hash)} target="_blank" rel="noreferrer">View shield transaction ↗</a> : null}
       <form onSubmit={submit} aria-busy={submitting}>
         <label>
-          Recipient address
-          <input
-            placeholder="0x…"
-            value={form.recipient}
-            onChange={(event) => setForm({ ...form, recipient: event.target.value })}
-          />
+          <span className="recipient-label-row"><span>Recipient address</span>{selectedAlias ? <i>{selectedAlias}</i> : null}</span>
+          <span className="recipient-directory-row">
+            <input
+              placeholder="0x…"
+              value={form.recipient}
+              onChange={(event) => { setForm({ ...form, recipient: event.target.value }); setSelectedAlias(null); }}
+            />
+            <button className="directory-trigger" type="button" onClick={() => setDirectoryOpen(true)} aria-label="Open encrypted recipient directory">Directory</button>
+          </span>
         </label>
         <p className="status">Private transfers require both sender and recipient to be registered with STRK20. Only the recipient can register their wallet.</p>
         <div className="form-row">
@@ -244,6 +253,15 @@ export function PrivatePayment() {
         <p className="status">{unshieldMessage}</p>
         {unshieldTransaction ? <a className="transaction-link" href={getStarknetExplorerTransactionUrl(unshieldTransaction.hash)} target="_blank" rel="noreferrer">View public withdrawal transaction ↗</a> : null}
       </div>
+      <DirectoryModal
+        open={directoryOpen}
+        onClose={() => setDirectoryOpen(false)}
+        onSelect={(selection: DirectorySelection) => {
+          setForm((current) => ({ ...current, recipient: selection.recipientAddress }));
+          setSelectedAlias(selection.alias);
+          setMessage(`${selection.alias} resolved locally to a registered STRK20 recipient. Confirm the merchant before paying.`);
+        }}
+      />
     </section>
   );
 }
