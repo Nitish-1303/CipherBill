@@ -9,6 +9,7 @@ import { InvoiceDashboard } from "@/components/invoice-dashboard";
 import { EscrowPortal } from "@/components/escrow-portal";
 import { FiatConverter } from "@/components/fiat-converter";
 import { ArbitrationVault } from "@/components/arbitration-vault";
+import { ExpenseSplitterModal } from "@/components/expense-splitter-modal";
 
 const tabs = [
   ["invoice", "Single Invoice"],
@@ -17,6 +18,7 @@ const tabs = [
   ["escrow", "Enterprise Escrow"],
   ["fiat", "Fiat Shielding"],
   ["disputes", "Arbitration Vault"],
+  ["expenses", "Expense Splitter"],
 ] as const;
 
 type Tab = (typeof tabs)[number][0];
@@ -64,7 +66,7 @@ export default function Home() {
             </button>
           ))}
         </div>
-        {tab === "invoice" ? <InvoicePanel /> : tab === "payroll" ? <BatchPayrollDashboard /> : tab === "audit" ? <InvoiceDashboard /> : tab === "escrow" ? <EscrowPortal /> : tab === "fiat" ? <FiatConverter /> : <ArbitrationVault />}
+        {tab === "invoice" ? <InvoicePanel /> : tab === "payroll" ? <BatchPayrollDashboard /> : tab === "audit" ? <InvoiceDashboard /> : tab === "escrow" ? <EscrowPortal /> : tab === "fiat" ? <FiatConverter /> : tab === "disputes" ? <ArbitrationVault /> : <ExpenseSplitterModal />}
       </section>
 
       <section className="privacy-model">
