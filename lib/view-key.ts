@@ -13,10 +13,10 @@
  *
  * The envelope carries no invoice data in plaintext: the invoice id, merchant
  * fields, amounts and transaction hashes all live inside the ciphertext. Only the
- * algorithm header, the network, the STRK20 pool address, and a truncated
- * key-check value are readable without the key, and those header bytes are bound
- * into the AES-GCM tag as additional authenticated data, so editing them makes
- * decryption fail rather than silently succeed.
+ * algorithm header, the network, the STRK20 pool address, a truncated key-check
+ * value, and a fixed handling notice are readable without the key, and every one of
+ * those fields is bound into the AES-GCM tag as additional authenticated data, so
+ * editing them makes decryption fail rather than silently succeed.
  *
  * WHAT THIS IS NOT  (read before writing any docs or UI copy against this module)
  * -----------------------------------------------------------------------------
@@ -45,6 +45,7 @@
 
 import {
   getInvoiceAccounting,
+  getMilestoneAccounting,
   type InvoiceLifecycle,
   type InvoicePaymentRecord,
   type InvoicePaymentStatus,
@@ -71,7 +72,10 @@ const DISCLOSURE_NOTICE =
   + "The accompanying view-key is an AES-256-GCM key produced by CipherBill. It is NOT a STRK20 protocol "
   + "viewing key and NOT part of the STRK20 auditor key escrow. It decrypts only this bundle: it cannot "
   + "decrypt STRK20 pool notes, derive nullifiers, read shielded balances, or authorize spending. "
-  + "Disclosed settlement hashes must be verified independently on Starknet mainnet.";
+  + "Disclosed settlement hashes identify STRK20 pool transactions: for in-pool movement Starknet "
+  + "publishes only a nullifier, unlinkable without that account's viewing key, so a third party can "
+  + "confirm a pool transaction executed but cannot derive the amount, the counterparties, or the "
+  + "invoice linkage from the hash. Those remain merchant assertions.";
 
 const ENVELOPE_NOTICE =
   "Encrypted CipherBill audit disclosure. Inert without its separately delivered view-key. "
@@ -82,7 +86,8 @@ const DISCLOSURE_LIMITATIONS: readonly string[] = [
   "Deposits and withdrawals at the STRK20 pool edges are already public on Starknet, including their addresses and amounts. Encrypting this report does not make them private.",
   "This bundle is application metadata plus on-chain transaction hashes. It is not a zero-knowledge proof and carries no merchant digital signature.",
   "Anyone holding both the envelope and its view-key can read every disclosed field. Deliver the view-key over a separate channel from the envelope.",
-  "Payment records reflect what this merchant's browser observed. Independently confirm every disclosed hash on Starknet mainnet before relying on it.",
+  "Payment records reflect what this merchant's browser observed. A disclosed hash shows only that a STRK20 pool transaction executed: in-pool movement publishes just an unlinkable nullifier, so the amounts and counterparties here cannot be corroborated from the chain without that account's escrowed viewing key.",
+  "Totals cover only the disclosed scope. A milestone-scoped or confirmed-only export reports figures for the records it includes, not for the whole invoice.",
 ];
 
 export type AuditDisclosureErrorCode =
@@ -106,7 +111,8 @@ export interface AuditDisclosureKey {
 }
 
 export interface AuditDisclosurePayment {
-  hash: string;
+  /** Present only when the merchant disclosed settlement hashes. */
+  hash?: string;
   status: InvoicePaymentStatus;
   amount: string;
   amountBaseUnits: string;
@@ -114,7 +120,14 @@ export interface AuditDisclosurePayment {
   milestoneLabel?: string;
   submittedAt: string;
   confirmedAt?: string;
-  explorerUrl: string;
+  /** Present only alongside `hash`. */
+  explorerUrl?: string;
+}
+
+/** Records the export's scope so totals are never mistaken for whole-invoice figures. */
+export interface AuditDisclosureScope {
+  milestoneId?: string;
+  confirmedOnly: boolean;
 }
 
 export interface AuditDisclosureTotals {
@@ -142,6 +155,7 @@ export interface AuditDisclosureBundle {
   disclosedFields: string[];
   disclosed: Record<string, string>;
   payments: AuditDisclosurePayment[];
+  scope: AuditDisclosureScope;
   totals: AuditDisclosureTotals;
   notice: string;
   limitations: string[];
@@ -210,12 +224,25 @@ export async function buildAuditDisclosureBundle(
   options: BuildAuditDisclosureOptions = {},
 ): Promise<AuditDisclosureBundle> {
   const generatedAt = options.generatedAt ?? new Date();
-  const accounting = getInvoiceAccounting(invoice, lifecycle);
   const decimals = invoice.tokenDecimals;
 
   const selected = lifecycle.payments
     .filter((payment) => (options.milestoneId ? payment.milestoneId === options.milestoneId : true))
     .filter((payment) => (options.confirmedOnly ? payment.status === "confirmed" : true));
+
+  /*
+   * Totals are derived from the records actually disclosed plus the face value of the disclosed
+   * scope. Reading them off whole-invoice accounting would restate figures for payments this
+   * export deliberately withheld - a milestone-scoped export would report the other milestones'
+   * confirmed value, and a confirmed-only export would report the pending attempt it just hid.
+   * `remaining` stays `total - confirmed`, matching getInvoiceAccounting.
+   */
+  const scopeTotalBaseUnits = options.milestoneId
+    ? getMilestoneAccounting(invoice, lifecycle, options.milestoneId).totalBaseUnits
+    : getInvoiceAccounting(invoice, lifecycle).totalBaseUnits;
+  const confirmedBaseUnits = sumSelectedBaseUnits(selected, "confirmed");
+  const pendingBaseUnits = sumSelectedBaseUnits(selected, "submitted");
+  const remainingBaseUnits = scopeTotalBaseUnits - confirmedBaseUnits;
 
   const disclosed: Record<string, string> = {};
   if (selection.merchantName) disclosed.merchantName = invoice.merchantName;
@@ -241,6 +268,8 @@ export async function buildAuditDisclosureBundle(
   }
 
   const payloadDigest = options.encodedPayload ? await computePayloadDigest(options.encodedPayload) : undefined;
+  const payments = selected.map((payment) => describePayment(payment, invoice, selection));
+  const disclosedHashes = selection.transactionHash && payments.length > 0;
 
   return {
     kind: BUNDLE_KIND,
@@ -249,20 +278,24 @@ export async function buildAuditDisclosureBundle(
     network: MAINNET_CHAIN_ID,
     poolAddress: STRK20_POOL_ADDRESS,
     generatedAt: generatedAt.toISOString(),
-    disclosedFields: Object.keys(disclosed),
+    disclosedFields: [...Object.keys(disclosed), ...(disclosedHashes ? ["settlementHashes"] : [])],
     disclosed,
-    payments: selected.map((payment) => describePayment(payment, invoice, selection)),
+    payments,
+    scope: {
+      ...(options.milestoneId ? { milestoneId: options.milestoneId } : {}),
+      confirmedOnly: Boolean(options.confirmedOnly),
+    },
     totals: {
       tokenSymbol: invoice.tokenSymbol,
       tokenDecimals: decimals,
-      totalBaseUnits: accounting.totalBaseUnits.toString(),
-      confirmedBaseUnits: accounting.confirmedBaseUnits.toString(),
-      pendingBaseUnits: accounting.pendingBaseUnits.toString(),
-      remainingBaseUnits: accounting.remainingBaseUnits.toString(),
-      total: baseUnitsToDecimal(accounting.totalBaseUnits, decimals),
-      confirmed: baseUnitsToDecimal(accounting.confirmedBaseUnits, decimals),
-      pending: baseUnitsToDecimal(accounting.pendingBaseUnits, decimals),
-      remaining: baseUnitsToDecimal(accounting.remainingBaseUnits, decimals),
+      totalBaseUnits: scopeTotalBaseUnits.toString(),
+      confirmedBaseUnits: confirmedBaseUnits.toString(),
+      pendingBaseUnits: pendingBaseUnits.toString(),
+      remainingBaseUnits: remainingBaseUnits.toString(),
+      total: baseUnitsToDecimal(scopeTotalBaseUnits, decimals),
+      confirmed: baseUnitsToDecimal(confirmedBaseUnits, decimals),
+      pending: baseUnitsToDecimal(pendingBaseUnits, decimals),
+      remaining: baseUnitsToDecimal(remainingBaseUnits, decimals),
     },
     notice: DISCLOSURE_NOTICE,
     limitations: [...DISCLOSURE_LIMITATIONS],
@@ -298,6 +331,7 @@ export async function encryptAuditDisclosure(
     poolAddress: STRK20_POOL_ADDRESS,
     algorithm: AUDIT_DISCLOSURE_ALGORITHM,
     keyCheckValue: await computeKeyCheckValue(keyBytes),
+    notice: ENVELOPE_NOTICE,
   } as const;
 
   const cryptoKey = await importAesKey(keyBytes, "encrypt");
@@ -311,7 +345,6 @@ export async function encryptAuditDisclosure(
     ...header,
     iv: bytesToBase64Url(iv),
     ciphertext: bytesToBase64Url(ciphertext),
-    notice: ENVELOPE_NOTICE,
   };
 }
 
@@ -339,6 +372,7 @@ export async function decryptAuditDisclosure(
     poolAddress: envelope.poolAddress,
     algorithm: envelope.algorithm,
     keyCheckValue: envelope.keyCheckValue,
+    notice: envelope.notice,
   } as const;
 
   let plaintext: ArrayBuffer;
@@ -419,7 +453,11 @@ function describePayment(
     ? invoice.milestones?.find((candidate) => candidate.id === payment.milestoneId)
     : undefined;
   return {
-    hash: payment.hash,
+    // Gated: unchecking "Settlement hashes" must actually withhold the hash and its explorer link,
+    // matching how lib/selective-receipts.ts treats the same flag.
+    ...(selection.transactionHash
+      ? { hash: payment.hash, explorerUrl: getStarknetExplorerTransactionUrl(payment.hash) }
+      : {}),
     status: payment.status,
     amount: baseUnitsToDecimal(payment.amountBaseUnits, invoice.tokenDecimals),
     amountBaseUnits: payment.amountBaseUnits,
@@ -427,14 +465,25 @@ function describePayment(
     ...(selection.milestone && milestone ? { milestoneLabel: milestone.label } : {}),
     submittedAt: payment.submittedAt,
     ...(payment.confirmedAt ? { confirmedAt: payment.confirmedAt } : {}),
-    explorerUrl: getStarknetExplorerTransactionUrl(payment.hash),
   };
+}
+
+function sumSelectedBaseUnits(payments: readonly InvoicePaymentRecord[], status: InvoicePaymentStatus): bigint {
+  return payments.reduce(
+    (total, payment) => (payment.status === status ? total + BigInt(payment.amountBaseUnits) : total),
+    0n,
+  );
 }
 
 /**
  * Fixed-order header serialization used as AES-GCM additional authenticated data.
  * Written out field by field rather than via JSON.stringify so the byte layout can
  * never drift with key insertion order.
+ *
+ * `notice` is included deliberately. It is the only prose an auditor can read before
+ * supplying a key, so leaving it outside the tag would let anyone relaying the envelope
+ * rewrite it - "safe to publish", "forward the view-key with this" - while decryption
+ * still succeeded. Binding it means altered instructions fail the tag check.
  */
 function associatedData(header: {
   kind: string;
@@ -443,10 +492,17 @@ function associatedData(header: {
   poolAddress: string;
   algorithm: string;
   keyCheckValue: string;
+  notice: string;
 }): Bytes {
-  return new TextEncoder().encode(
-    [header.kind, header.version, header.network, header.poolAddress, header.algorithm, header.keyCheckValue].join("|"),
-  );
+  return new TextEncoder().encode([
+    header.kind,
+    header.version,
+    header.network,
+    header.poolAddress,
+    header.algorithm,
+    header.keyCheckValue,
+    header.notice,
+  ].join("|"));
 }
 
 async function importAesKey(keyBytes: Bytes, usage: "encrypt" | "decrypt"): Promise<CryptoKey> {
@@ -481,25 +537,116 @@ function parseAuditKey(key: string): Bytes {
   return bytes;
 }
 
+/** Keys an envelope may carry. Anything else means it was built by something other than this module. */
+const ENVELOPE_KEYS: readonly string[] = [
+  "kind",
+  "version",
+  "network",
+  "poolAddress",
+  "algorithm",
+  "keyCheckValue",
+  "iv",
+  "ciphertext",
+  "notice",
+];
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isPlainObject(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+/**
+ * Full structural check on a decrypted bundle.
+ *
+ * A correct view-key proves the bundle came from whoever held the key - it does not prove
+ * the bundle is well-formed, and the rendering code reads `limitations`, `payments[]`, and
+ * `totals` without guarding. Validating the whole shape here keeps `decryptAuditDisclosure`'s
+ * contract honest: recover the bundle, or fail loudly. A partial check would let a malformed
+ * bundle through to crash the auditor's page instead.
+ */
 function isAuditDisclosureBundle(value: unknown): value is AuditDisclosureBundle {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!isPlainObject(value)) return false;
   const candidate = value as Partial<AuditDisclosureBundle>;
   return candidate.kind === BUNDLE_KIND
     && candidate.version === AUDIT_DISCLOSURE_VERSION
     && typeof candidate.invoiceId === "string"
+    && typeof candidate.network === "string"
+    && typeof candidate.poolAddress === "string"
+    && typeof candidate.generatedAt === "string"
+    && (candidate.payloadDigest === undefined || typeof candidate.payloadDigest === "string")
+    && isStringArray(candidate.disclosedFields)
+    && isStringRecord(candidate.disclosed)
     && Array.isArray(candidate.payments)
-    && Boolean(candidate.totals)
-    && Boolean(candidate.disclosed);
+    && candidate.payments.every(isAuditDisclosurePayment)
+    && isAuditDisclosureScope(candidate.scope)
+    && isAuditDisclosureTotals(candidate.totals)
+    && typeof candidate.notice === "string"
+    && isStringArray(candidate.limitations);
+}
+
+const PAYMENT_STATUSES: readonly InvoicePaymentStatus[] = ["submitted", "confirmed", "failed"];
+
+function isAuditDisclosurePayment(value: unknown): value is AuditDisclosurePayment {
+  if (!isPlainObject(value)) return false;
+  const candidate = value as Partial<AuditDisclosurePayment>;
+  return PAYMENT_STATUSES.includes(candidate.status as InvoicePaymentStatus)
+    && typeof candidate.amount === "string"
+    && typeof candidate.amountBaseUnits === "string"
+    && typeof candidate.submittedAt === "string"
+    && (candidate.hash === undefined || typeof candidate.hash === "string")
+    && (candidate.explorerUrl === undefined || typeof candidate.explorerUrl === "string")
+    && (candidate.milestoneId === undefined || typeof candidate.milestoneId === "string")
+    && (candidate.milestoneLabel === undefined || typeof candidate.milestoneLabel === "string")
+    && (candidate.confirmedAt === undefined || typeof candidate.confirmedAt === "string");
+}
+
+function isAuditDisclosureScope(value: unknown): value is AuditDisclosureScope {
+  if (!isPlainObject(value)) return false;
+  const candidate = value as Partial<AuditDisclosureScope>;
+  return typeof candidate.confirmedOnly === "boolean"
+    && (candidate.milestoneId === undefined || typeof candidate.milestoneId === "string");
+}
+
+function isAuditDisclosureTotals(value: unknown): value is AuditDisclosureTotals {
+  if (!isPlainObject(value)) return false;
+  const candidate = value as Partial<AuditDisclosureTotals>;
+  const amounts: Array<keyof AuditDisclosureTotals> = [
+    "totalBaseUnits",
+    "confirmedBaseUnits",
+    "pendingBaseUnits",
+    "remainingBaseUnits",
+    "total",
+    "confirmed",
+    "pending",
+    "remaining",
+  ];
+  return typeof candidate.tokenSymbol === "string"
+    && typeof candidate.tokenDecimals === "number"
+    && amounts.every((field) => typeof candidate[field] === "string");
 }
 
 function isEncryptedAuditDisclosure(value: unknown): value is EncryptedAuditDisclosure {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!isPlainObject(value)) return false;
+  // Strict key set: an envelope carrying extra fields would survive decoding and reach the
+  // auditor's page as trusted-looking data that the AES-GCM tag never covered.
+  if (Object.keys(value).some((field) => !ENVELOPE_KEYS.includes(field))) return false;
   const candidate = value as Partial<EncryptedAuditDisclosure>;
   return candidate.kind === ENVELOPE_KIND
     && candidate.version === AUDIT_DISCLOSURE_VERSION
+    && candidate.algorithm === AUDIT_DISCLOSURE_ALGORITHM
+    && typeof candidate.network === "string"
+    && typeof candidate.poolAddress === "string"
     && typeof candidate.iv === "string"
     && typeof candidate.ciphertext === "string"
-    && typeof candidate.keyCheckValue === "string";
+    && typeof candidate.keyCheckValue === "string"
+    && typeof candidate.notice === "string";
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
