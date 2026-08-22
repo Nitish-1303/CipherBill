@@ -8,6 +8,7 @@ import {
   readInvoices,
   type ShareableInvoice,
 } from "./invoices";
+import { createReputationProof, generateReputationAttestorKeypair } from "./reputation-engine";
 import { decimalToBaseUnits } from "./strk20/validation";
 
 const invoice: ShareableInvoice = {
@@ -128,6 +129,41 @@ describe("shareable invoice payloads", () => {
     await expect(decodeInvoicePayload(await signRaw({ ...rebateInvoice, rebatePolicy: { ...rebateInvoice.rebatePolicy, privateKey: "nope" } }))).resolves.toMatchObject({ status: "invalid", code: "unsafe_field" });
   });
 
+  it("round-trips a merchant-bound public reputation proof without private history", async () => {
+    const authority = generateReputationAttestorKeypair({ privateKey: 987654321n });
+    const reputationProof = createReputationProof({
+      merchantAddress: invoice.recipientAddress,
+      credentials: [{
+        credentialId: "private_credential_001",
+        invoiceCommitment: "0x111",
+        settlementCommitment: "0x222",
+        dueAt: "2027-12-20T00:00:00.000Z",
+        settledAt: "2027-12-19T00:00:00.000Z",
+        outcome: "settled",
+      }],
+      attestorId: "cipherbill.test-authority",
+      attestorPrivateKey: authority.privateKey,
+      validityDays: 30,
+    }, new Date("2028-01-01T00:00:00.000Z"), {
+      blindings: { total: 11n, successful: 12n, onTime: 13n, late: 14n, disputed: 15n, score: 16n },
+      proofNonces: [21n, 22n, 23n, 24n],
+      signatureNonce: 31n,
+    }).attestation;
+    const withReputation = { ...invoice, reputationProof };
+    const encoded = await encodeInvoicePayload(withReputation);
+    const decoded = await decodeInvoicePayload(encoded, Date.parse("2028-01-15T00:00:00.000Z"));
+    expect(decoded).toMatchObject({ status: "valid", invoice: { reputationProof: { score: 606, tier: "developing" } } });
+    const decodedJson = new TextDecoder().decode(decodeBase64Url(encoded.split(".")[0]));
+    expect(decodedJson).not.toContain("private_credential_001");
+    expect(decodedJson).not.toContain("settledAt");
+
+    const mismatched = { ...reputationProof, merchantAddress: "0x999" };
+    await expect(encodeInvoicePayload({ ...invoice, reputationProof: mismatched })).rejects.toThrow(/proof/i);
+    const nestedExtension = structuredClone(reputationProof) as typeof reputationProof & { signature: typeof reputationProof.signature & { privateKey?: string } };
+    nestedExtension.signature.privateKey = "never";
+    await expect(decodeInvoicePayload(await signRaw({ ...invoice, reputationProof: nestedExtension }))).resolves.toMatchObject({ status: "invalid", code: "unsafe_field" });
+  });
+
   it("handles corrupt local history safely", () => {
     expect(readInvoices({ getItem: () => "{broken" })).toEqual([]);
     expect(readInvoices({ getItem: () => JSON.stringify([{ invoice: null }]) })).toEqual([]);
@@ -155,4 +191,9 @@ async function signRaw(value: unknown): Promise<string> {
   for (const byte of digest.slice(0, 16)) checksumBinary += String.fromCharCode(byte);
   const checksum = btoa(checksumBinary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
   return `${data}.${checksum}`;
+}
+
+function decodeBase64Url(value: string): Uint8Array {
+  const padded = value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
 }

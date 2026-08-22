@@ -1,5 +1,6 @@
 import { MAINNET_CHAIN_ID } from "./strk20/config";
-import { decimalToBaseUnits, normalizeStarknetAddress } from "./strk20/validation";
+import { parseReputationAttestation, type ReputationAttestation } from "./reputation-engine";
+import { areSameStarknetAddress, decimalToBaseUnits, normalizeStarknetAddress } from "./strk20/validation";
 import { createInvoiceLifecycle, normalizeInvoiceLifecycle, type InvoiceLifecycle } from "./invoice-lifecycle";
 
 export const INVOICE_SCHEMA_VERSION = 2 as const;
@@ -18,7 +19,7 @@ const SECRET_VALUE = /\b(api key|private key|seed phrase|mnemonic|viewing key)\b
 const ALLOWED_FIELDS = new Set([
   "version", "invoiceId", "merchantName", "recipientAddress", "tokenAddress", "tokenSymbol",
   "tokenDecimals", "amount", "description", "referenceNumber", "createdAt", "expiresAt", "network",
-  "allowPartialPayments", "milestones", "rebatePolicy",
+  "allowPartialPayments", "milestones", "rebatePolicy", "reputationProof",
 ]);
 const ALLOWED_MILESTONE_FIELDS = new Set(["id", "label", "amount"]);
 const ALLOWED_REBATE_FIELDS = new Set(["version", "maximumRebateBps", "minimumLeadTimeSeconds", "fullRebateLeadTimeSeconds"]);
@@ -69,6 +70,7 @@ export interface ShareableInvoice {
   allowPartialPayments: boolean;
   milestones?: InvoiceMilestone[];
   rebatePolicy?: InvoiceRebatePolicy;
+  reputationProof?: ReputationAttestation;
 }
 
 export interface CreateInvoiceInput {
@@ -84,6 +86,7 @@ export interface CreateInvoiceInput {
   allowPartialPayments?: boolean;
   milestones?: InvoiceMilestone[];
   rebatePolicy?: InvoiceRebatePolicy;
+  reputationProof?: ReputationAttestation;
 }
 
 export interface LocalInvoiceRecord {
@@ -130,6 +133,7 @@ export function createShareableInvoice(
     allowPartialPayments: Boolean(input.allowPartialPayments),
     milestones: input.milestones?.length ? input.milestones : undefined,
     rebatePolicy: input.rebatePolicy,
+    reputationProof: input.reputationProof,
   });
 
   if (Date.parse(invoice.expiresAt) <= now.getTime()) {
@@ -242,7 +246,7 @@ function validateInvoice(value: unknown): ShareableInvoice {
     throw new InvoiceValidationError("unsupported_version", "This invoice schema version is not supported.");
   }
   const allowedFields = record.version === 1
-    ? new Set([...ALLOWED_FIELDS].filter((key) => !["allowPartialPayments", "milestones", "rebatePolicy"].includes(key)))
+    ? new Set([...ALLOWED_FIELDS].filter((key) => !["allowPartialPayments", "milestones", "rebatePolicy", "reputationProof"].includes(key)))
     : ALLOWED_FIELDS;
   if (keys.some((key) => !allowedFields.has(key))) {
     throw new InvoiceValidationError("unsafe_field", "Invoice payload contains unsupported fields.");
@@ -291,6 +295,9 @@ function validateInvoice(value: unknown): ShareableInvoice {
   const rebatePolicy = record.version === INVOICE_SCHEMA_VERSION
     ? validateInvoiceRebatePolicy(record.rebatePolicy)
     : undefined;
+  const reputationProof = record.version === INVOICE_SCHEMA_VERSION
+    ? validateInvoiceReputationProof(record.reputationProof, recipientAddress)
+    : undefined;
   if (rebatePolicy && (record.allowPartialPayments || milestones?.length)) {
     throw new InvoiceValidationError("incomplete", "Early rebates require one exact payment without milestones.");
   }
@@ -318,7 +325,24 @@ function validateInvoice(value: unknown): ShareableInvoice {
     allowPartialPayments: record.version === INVOICE_SCHEMA_VERSION ? record.allowPartialPayments as boolean : false,
     ...(milestones ? { milestones } : {}),
     ...(rebatePolicy ? { rebatePolicy } : {}),
+    ...(reputationProof ? { reputationProof } : {}),
   };
+}
+
+function validateInvoiceReputationProof(value: unknown, recipientAddress: string): ReputationAttestation | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const proof = parseReputationAttestation(JSON.stringify(value));
+    if (!areSameStarknetAddress(proof.merchantAddress, recipientAddress)) {
+      throw new InvoiceValidationError("incomplete", "Reputation proof does not belong to the invoice merchant.");
+    }
+    return proof;
+  } catch (error) {
+    if (error instanceof InvoiceValidationError) throw error;
+    const message = error instanceof Error ? error.message : "Reputation proof is invalid.";
+    const code = /unsupported|secret/i.test(message) ? "unsafe_field" : "incomplete";
+    throw new InvoiceValidationError(code, `Reputation proof is invalid: ${message}`);
+  }
 }
 
 function validateInvoiceRebatePolicy(value: unknown): InvoiceRebatePolicy | undefined {
