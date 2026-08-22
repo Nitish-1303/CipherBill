@@ -22,6 +22,10 @@ const emptyForm = {
   expiresAt: "",
   allowPartialPayments: false,
   milestones: [] as Array<{ id: string; label: string; amount: string }>,
+  earlyRebateEnabled: false,
+  maximumRebateBps: 500,
+  minimumLeadTimeHours: 1,
+  fullRebateLeadTimeDays: 7,
 };
 
 interface GeneratedInvoice {
@@ -63,6 +67,12 @@ export function InvoicePanel() {
         expiresAt: new Date(form.expiresAt).toISOString(),
         allowPartialPayments: form.allowPartialPayments,
         milestones: form.milestones.length ? form.milestones : undefined,
+        rebatePolicy: form.earlyRebateEnabled ? {
+          version: 1,
+          maximumRebateBps: form.maximumRebateBps,
+          minimumLeadTimeSeconds: form.minimumLeadTimeHours * 60 * 60,
+          fullRebateLeadTimeSeconds: form.fullRebateLeadTimeDays * 24 * 60 * 60,
+        } : undefined,
       });
       const encodedPayload = await encodeInvoicePayload(invoice);
       const record: LocalInvoiceRecord = {
@@ -162,7 +172,7 @@ export function InvoicePanel() {
           <label>Description<input required maxLength={160} placeholder="Design retainer" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
           <label>Reference number (optional)<input maxLength={64} placeholder="PO-1042" value={form.referenceNumber} onChange={(event) => setForm({ ...form, referenceNumber: event.target.value })} /></label>
           <label>Expires at<input required type="datetime-local" value={form.expiresAt} onChange={(event) => setForm({ ...form, expiresAt: event.target.value })} /></label>
-          <label className="checkbox-label"><input type="checkbox" checked={form.allowPartialPayments} onChange={(event) => setForm({ ...form, allowPartialPayments: event.target.checked })} />Allow partial payments</label>
+          <label className="checkbox-label"><input type="checkbox" checked={form.allowPartialPayments} disabled={form.earlyRebateEnabled} onChange={(event) => setForm({ ...form, allowPartialPayments: event.target.checked })} />Allow partial payments</label>
           <fieldset className="milestone-editor">
             <legend>Milestones (optional, maximum 8)</legend>
             {form.milestones.map((milestone, index) => (
@@ -172,8 +182,22 @@ export function InvoicePanel() {
                 <button type="button" onClick={() => removeMilestone(index)} aria-label={`Remove milestone ${index + 1}`}>Remove</button>
               </div>
             ))}
-            <button type="button" onClick={addMilestone} disabled={form.milestones.length >= 8}>Add milestone</button>
+            <button type="button" onClick={addMilestone} disabled={form.milestones.length >= 8 || form.earlyRebateEnabled}>Add milestone</button>
             <p className="status">Milestone amounts must equal the invoice total exactly.</p>
+          </fieldset>
+          <fieldset className="rebate-policy-editor">
+            <legend>Early-payment rebate (optional)</legend>
+            <label className="checkbox-label"><input type="checkbox" checked={form.earlyRebateEnabled} onChange={(event) => setForm({ ...form, earlyRebateEnabled: event.target.checked, allowPartialPayments: event.target.checked ? false : form.allowPartialPayments, milestones: event.target.checked ? [] : form.milestones })} />Offer a vendor-funded early-settlement discount</label>
+            {form.earlyRebateEnabled ? (
+              <>
+                <label>Maximum discount <strong>{(form.maximumRebateBps / 100).toFixed(2)}%</strong><input type="range" min={25} max={2500} step={25} value={form.maximumRebateBps} onChange={(event) => setForm({ ...form, maximumRebateBps: Number(event.target.value) })} /></label>
+                <div className="form-row">
+                  <label>Full discount at least (days before due)<input required type="number" min={1} max={365} step={1} value={form.fullRebateLeadTimeDays} onChange={(event) => setForm({ ...form, fullRebateLeadTimeDays: Number(event.target.value) })} /></label>
+                  <label>Discount cutoff (hours before due)<input required type="number" min={0} max={8760} step={1} value={form.minimumLeadTimeHours} onChange={(event) => setForm({ ...form, minimumLeadTimeHours: Number(event.target.value) })} /></label>
+                </div>
+                <p className="status">The eligible ceiling decays linearly toward the cutoff. Rebate invoices settle once, so partial payments and milestones are disabled.</p>
+              </>
+            ) : null}
           </fieldset>
           <div className="invoice-submit-row">
             <button type="submit" value="draft" disabled={creating}>{creating ? "Saving..." : "Save draft"}</button>
@@ -183,7 +207,7 @@ export function InvoicePanel() {
           <p className="status">Never put private keys, seed phrases, viewing keys, RPC keys, wallet history, notes, or proofs in invoice fields.</p>
           <aside className="composer-privacy-preview">
             <strong>Link privacy preview</strong>
-            <p>Anyone with the URL can read the merchant name and address, amount, description, reference, expiration, payment policy, and every milestone entered above.</p>
+            <p>Anyone with the URL can read the merchant name and address, amount, description, reference, expiration, payment policy, every milestone, and any early-rebate schedule entered above.</p>
             <p>The link contains no payer identity or wallet state. Its checksum detects edits but does not authenticate the merchant.</p>
           </aside>
         </form>
@@ -212,7 +236,7 @@ export function InvoicePanel() {
               <article className="invoice-item" key={record.invoice.invoiceId}>
                 <div><strong>{record.invoice.amount} {record.invoice.tokenSymbol}</strong><span>{status}</span></div>
                 <p>{record.invoice.description}</p>
-                <small>{record.invoice.invoiceId} - expires {new Date(record.invoice.expiresAt).toLocaleString()}</small>
+                <small>{record.invoice.invoiceId} - expires {new Date(record.invoice.expiresAt).toLocaleString()}{record.invoice.rebatePolicy ? ` - up to ${(record.invoice.rebatePolicy.maximumRebateBps / 100).toFixed(2)}% early rebate` : ""}</small>
                 <div className="invoice-actions">
                   {status === "draft" ? <button type="button" onClick={() => activate(record)}>Activate</button> : null}
                   {["active", "partially_paid"].includes(status) ? <button type="button" onClick={() => copy(url)}>Copy link</button> : null}

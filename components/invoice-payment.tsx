@@ -21,8 +21,10 @@ import {
   validateInvoicePayment,
   writePayerInvoiceLifecycle,
   type InvoiceLifecycle,
+  type InvoicePaymentRecord,
 } from "@/lib/invoice-lifecycle";
 import { decodeInvoicePayload, type InvoiceDecodeResult, type ShareableInvoice } from "@/lib/invoices";
+import { buildRebateSettlementActions, verifyRebateCommitment, type RebateClaim } from "@/lib/rebate-engine";
 import {
   createSelectiveReceipt,
   DEFAULT_RECEIPT_SELECTION,
@@ -38,6 +40,7 @@ import { areSameStarknetAddress, baseUnitsToDecimal, decimalToBaseUnits, isValid
 
 import { WalletConnect } from "./wallet-connect";
 import { useWallet } from "./wallet-provider";
+import { RebateCalculator } from "./rebate-calculator";
 
 type PaymentPhase = "idle" | "checking_registration" | "preparing" | "confirming" | "confirmed" | "delayed" | "rejected" | "failed_before_submission" | "reverted";
 
@@ -65,12 +68,14 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
   const [receiptSelection, setReceiptSelection] = useState(DEFAULT_RECEIPT_SELECTION);
   const [receiptGeneratedAt, setReceiptGeneratedAt] = useState(() => new Date());
   const [receiptMessage, setReceiptMessage] = useState("");
+  const [rebateClaim, setRebateClaim] = useState<RebateClaim | null>(null);
   const paymentLock = useRef(false);
 
   useEffect(() => {
     let active = true;
     setDecoded(null);
     setLifecycle(null);
+    setRebateClaim(null);
     decodeInvoicePayload(encodedPayload).then((result) => {
       if (!active) return;
       setDecoded(result);
@@ -101,7 +106,8 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
   const tokenSupported = areSameStarknetAddress(invoice.tokenAddress, STRK_TOKEN_ADDRESS)
     && invoice.tokenSymbol === "STRK"
     && invoice.tokenDecimals === 18;
-  const paymentError = getPaymentValidationError(invoice, currentLifecycle, paymentAmount, selectedMilestoneId);
+  const rebateAdjustment = paymentFieldsForRebate(rebateClaim);
+  const paymentError = getPaymentValidationError(invoice, currentLifecycle, paymentAmount, selectedMilestoneId, rebateClaim);
   const acceptingPayments = ["active", "partially_paid"].includes(lifecycleStatus);
   const paymentInFlight = ["checking_registration", "preparing", "confirming", "delayed"].includes(paymentPhase);
   const latestReceiptPayment = [...currentLifecycle.payments].reverse().find((payment) => payment.status !== "failed");
@@ -118,6 +124,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
   }
 
   function chooseMilestone(milestoneId: string): void {
+    setRebateClaim(null);
     setSelectedMilestoneId(milestoneId);
     if (!milestoneId) {
       setPaymentAmount("");
@@ -125,6 +132,23 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
     }
     const milestoneAccounting = getMilestoneAccounting(invoice, currentLifecycle, milestoneId);
     setPaymentAmount(baseUnitsToDecimal(milestoneAccounting.remainingBaseUnits - milestoneAccounting.pendingBaseUnits, invoice.tokenDecimals));
+  }
+
+  function applyRebate(claim: RebateClaim | null): void {
+    try {
+      if (!claim) {
+        setRebateClaim(null);
+        setPaymentTarget(invoice, currentLifecycle, setSelectedMilestoneId, setPaymentAmount);
+        return;
+      }
+      const calculation = verifyRebateCommitment(invoice, claim, new Date());
+      setRebateClaim(claim);
+      setSelectedMilestoneId("");
+      setPaymentAmount(baseUnitsToDecimal(calculation.settlementBaseUnits, invoice.tokenDecimals));
+    } catch (error) {
+      setRebateClaim(null);
+      setMessage(error instanceof Error ? error.message : "Rebate claim could not be applied.");
+    }
   }
 
   async function pay(): Promise<void> {
@@ -135,9 +159,18 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
 
     try {
       const amountBaseUnits = decimalToBaseUnits(paymentAmount, invoice.tokenDecimals);
+      if (rebateClaim) {
+        const calculation = verifyRebateCommitment(invoice, rebateClaim, new Date());
+        const actions = buildRebateSettlementActions(invoice, rebateClaim, new Date());
+        const action = actions[0];
+        if (calculation.settlementBaseUnits.toString() !== amountBaseUnits || action?.type !== "transfer" || action.amount !== amountBaseUnits) {
+          throw new Error("Rebate settlement amount no longer matches the committed STRK20 action.");
+        }
+      }
       validateInvoicePayment(invoice, currentLifecycle, {
         amountBaseUnits,
         milestoneId: selectedMilestoneId || undefined,
+        ...rebateAdjustment,
       });
 
       const client = new MainnetStrk20Client(account);
@@ -192,6 +225,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
           hash: submittedTransaction.hash,
           amountBaseUnits,
           milestoneId: selectedMilestoneId || undefined,
+          ...rebateAdjustment,
           submittedAt: submittedTransaction.submittedAt,
         });
         persist(submittedLifecycle);
@@ -209,6 +243,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
         setReceiptGeneratedAt(new Date());
         setPaymentPhase("confirmed");
         setMessage("Payment confirmed by the configured Starknet RPC. Transaction hash is immutably retained for receipt generation.");
+        setRebateClaim(null);
         setPaymentTarget(invoice, confirmed, setSelectedMilestoneId, setPaymentAmount);
       } else if (result.status === "submitted") {
         setPaymentPhase("delayed");
@@ -274,6 +309,14 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
 
   return (
     <InvoiceDetails invoice={invoice} lifecycle={currentLifecycle} message={message}>
+      {invoice.rebatePolicy ? (
+        <RebateCalculator
+          invoice={invoice}
+          appliedClaim={rebateClaim}
+          disabled={!acceptingPayments || paymentInFlight || currentLifecycle.payments.some((payment) => payment.status !== "failed")}
+          onApply={applyRebate}
+        />
+      ) : null}
       <section className="invoice-payment-controls" aria-labelledby="payment-heading">
         <h2 id="payment-heading">Choose this payment</h2>
         {invoice.milestones?.length ? (
@@ -319,6 +362,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
         <div><span>Lifecycle State</span><strong>{formatStatus(lifecycleStatus)}</strong></div>
         <div><span>Total Invoice</span><strong>{baseUnitsToDecimal(accounting.totalBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</strong></div>
         <div><span>Confirmed</span><strong>{baseUnitsToDecimal(accounting.confirmedBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</strong></div>
+        <div><span>Rebate applied</span><strong>{baseUnitsToDecimal(accounting.confirmedRebateBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</strong></div>
         <div><span>Pending</span><strong>{baseUnitsToDecimal(accounting.pendingBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</strong></div>
         <div><span>Remaining</span><strong>{baseUnitsToDecimal(accounting.remainingBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</strong></div>
       </div>
@@ -334,6 +378,8 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
               </div>
               <div className="payment-details">
                 <div><strong>Amount:</strong> {baseUnitsToDecimal(payment.amountBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol}</div>
+                {payment.rebateBaseUnits ? <div><strong>Early rebate:</strong> {baseUnitsToDecimal(payment.rebateBaseUnits, invoice.tokenDecimals)} {invoice.tokenSymbol} at {((payment.rebateBps ?? 0) / 100).toFixed(2)}%</div> : null}
+                {payment.rebateCommitment ? <div><strong>Adjustment:</strong> <code>{payment.rebateCommitment.slice(0, 10)}...{payment.rebateCommitment.slice(-8)}</code></div> : null}
                 {payment.milestoneId ? <div><strong>Milestone:</strong> {invoice.milestones?.find(m => m.id === payment.milestoneId)?.label || payment.milestoneId}</div> : null}
                 <div><strong>Hash:</strong> <code>{payment.hash.slice(0, 10)}...{payment.hash.slice(-8)}</code></div>
                 <div><strong>Submitted:</strong> {new Date(payment.submittedAt).toLocaleString()}</div>
@@ -417,6 +463,7 @@ function InvoiceDetails({
           <div><dt>Token address</dt><dd><code>{`${invoice.tokenAddress.slice(0, 10)}...${invoice.tokenAddress.slice(-8)}`}</code></dd></div>
           {invoice.referenceNumber ? <div><dt>Reference</dt><dd>{invoice.referenceNumber}</dd></div> : null}
           <div><dt>Payment policy</dt><dd>{invoice.allowPartialPayments ? "Partial payments allowed" : invoice.milestones?.length ? "Exact milestone installments" : "Exact total only"}</dd></div>
+          {invoice.rebatePolicy ? <div><dt>Early rebate</dt><dd>Up to {(invoice.rebatePolicy.maximumRebateBps / 100).toFixed(2)}%, decaying toward the {formatLeadWindow(invoice.rebatePolicy.minimumLeadTimeSeconds)} cutoff</dd></div> : null}
           <div><dt>Created</dt><dd>{new Date(invoice.createdAt).toLocaleString()}</dd></div>
           <div><dt>Expires</dt><dd className={expired ? "expired-text" : ""}>{new Date(invoice.expiresAt).toLocaleString()} - {expired ? "expired" : "payable"}</dd></div>
         </dl>
@@ -435,7 +482,7 @@ function InvoiceDetails({
         <aside className="privacy-preview">
           <strong>Privacy preview</strong>
           <div className="privacy-preview-grid">
-            <div><span>Visible in this link</span><p>Merchant identity and address, token, amount, description, reference, milestones, dates, and payment policy.</p></div>
+            <div><span>Visible in this link</span><p>Merchant identity and address, token, amount, description, reference, milestones, dates, payment policy, and any vendor rebate schedule.</p></div>
             <div><span>Hidden in a private transfer</span><p>In-pool sender, recipient, token, amount, spent-note linkage, and encrypted note values.</p></div>
             <div><span>Still public or observable</span><p>Deposits, withdrawals, timing, fees, nullifiers, open-note values, this app&apos;s metadata, and distinctive-activity correlation.</p></div>
           </div>
@@ -456,12 +503,20 @@ function getPaymentValidationError(
   lifecycle: InvoiceLifecycle,
   amount: string,
   milestoneId: string,
+  rebateClaim: RebateClaim | null,
 ): string | null {
   if (!isValidAmount(amount)) return "Enter a positive payment amount with no more than 18 decimals.";
   try {
+    if (rebateClaim) {
+      const calculation = verifyRebateCommitment(invoice, rebateClaim, new Date());
+      if (calculation.settlementBaseUnits.toString() !== decimalToBaseUnits(amount, invoice.tokenDecimals)) {
+        throw new Error("Payment amount does not match the committed rebate settlement.");
+      }
+    }
     validateInvoicePayment(invoice, lifecycle, {
       amountBaseUnits: decimalToBaseUnits(amount, invoice.tokenDecimals),
       milestoneId: milestoneId || undefined,
+      ...paymentFieldsForRebate(rebateClaim),
     });
     return null;
   } catch (error) {
@@ -502,4 +557,24 @@ function isWalletRejection(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const candidate = error as { code?: unknown; message?: unknown };
   return candidate.code === 4001 || (typeof candidate.message === "string" && /reject|denied|cancel/i.test(candidate.message));
+}
+
+function paymentFieldsForRebate(claim: RebateClaim | null): Pick<
+  InvoicePaymentRecord,
+  "rebateBaseUnits" | "rebateBps" | "rebateCommitment" | "rebateIssuedAt" | "rebateValidUntil"
+> {
+  if (!claim) return {};
+  return {
+    rebateBaseUnits: claim.opening.rebateBaseUnits,
+    rebateBps: claim.opening.selectedRebateBps,
+    rebateCommitment: claim.proof.adjustmentCommitment,
+    rebateIssuedAt: claim.proof.issuedAt,
+    rebateValidUntil: claim.proof.validUntil,
+  };
+}
+
+function formatLeadWindow(seconds: number): string {
+  if (seconds >= 86_400 && seconds % 86_400 === 0) return `${seconds / 86_400} day${seconds === 86_400 ? "" : "s"}`;
+  if (seconds >= 3_600 && seconds % 3_600 === 0) return `${seconds / 3_600} hour${seconds === 3_600 ? "" : "s"}`;
+  return `${Math.floor(seconds / 60)} minutes`;
 }

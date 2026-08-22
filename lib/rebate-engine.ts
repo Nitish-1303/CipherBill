@@ -306,7 +306,7 @@ function computeAdjustmentCommitment(
     BigInt(calculation.selectedRebateBps),
     BigInt(calculation.eligibleRebateBps),
     BigInt(calculation.leadTimeSeconds),
-    BigInt(Math.floor(issuedAt.getTime() / 1_000)),
+    BigInt(issuedAt.getTime()),
     salt,
   ]);
 }
