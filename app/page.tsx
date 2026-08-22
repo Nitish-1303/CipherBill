@@ -6,11 +6,13 @@ import { InvoicePanel } from "@/components/invoice-panel";
 import { WalletConnect } from "@/components/wallet-connect";
 import { BatchPayrollDashboard } from "@/components/batch-payroll";
 import { InvoiceDashboard } from "@/components/invoice-dashboard";
+import { EscrowPortal } from "@/components/escrow-portal";
 
 const tabs = [
   ["invoice", "Single Invoice"],
   ["payroll", "Batch Payroll Dispersal"],
   ["audit", "Auditor Disclosures"],
+  ["escrow", "Enterprise Escrow"],
 ] as const;
 
 type Tab = (typeof tabs)[number][0];
@@ -58,7 +60,7 @@ export default function Home() {
             </button>
           ))}
         </div>
-        {tab === "invoice" ? <InvoicePanel /> : tab === "payroll" ? <BatchPayrollDashboard /> : <InvoiceDashboard />}
+        {tab === "invoice" ? <InvoicePanel /> : tab === "payroll" ? <BatchPayrollDashboard /> : tab === "audit" ? <InvoiceDashboard /> : <EscrowPortal />}
       </section>
 
       <section className="privacy-model">
