@@ -20,6 +20,7 @@ import {
   generateAuditDisclosureKey,
   MAX_ENCODED_DISCLOSURE_LENGTH,
   serializeEncryptedAuditDisclosure,
+  type AuditDisclosureBundle,
   type EncryptedAuditDisclosure,
 } from "./view-key";
 
@@ -106,6 +107,25 @@ async function fixture(selection: ReceiptDisclosureSelection = everything) {
   return { key, checkValue, bundle, envelope };
 }
 
+function decodeBase64Url(value: string): Uint8Array {
+  const padded = value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+}
+
+function encodeBase64Url(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+/** Byte-for-byte view of raw bytes as characters, so a plaintext substring cannot hide behind base64. */
+function asCharacters(bytes: Uint8Array): string {
+  let text = "";
+  for (const byte of bytes) text += String.fromCharCode(byte);
+  return text;
+}
+
 describe("audit disclosure view-keys", () => {
   it("round-trips a bundle through real AES-GCM encryption", async () => {
     const { key, bundle, envelope } = await fixture();
@@ -133,13 +153,26 @@ describe("audit disclosure view-keys", () => {
   it("leaks no invoice data in the envelope itself", async () => {
     const { envelope } = await fixture();
     const serialized = serializeEncryptedAuditDisclosure(envelope);
+    const secretish = ["inv_audit_001", "Cipher Studio", "PO-1042", "0xaaa1", "Privacy consulting", "voyager"];
 
-    for (const secretish of ["inv_audit_001", "Cipher Studio", "PO-1042", "0xaaa1", "Privacy consulting"]) {
-      expect(serialized).not.toContain(secretish);
+    for (const needle of secretish) {
+      expect(serialized).not.toContain(needle);
     }
     expect(Object.keys(envelope).sort()).toEqual(
       ["algorithm", "ciphertext", "iv", "keyCheckValue", "kind", "network", "notice", "poolAddress", "version"],
     );
+
+    /*
+     * Scan the DECODED ciphertext, not the base64 text. Base64 re-encodes every byte, so a
+     * substring scan over `serialized` would pass even if the ciphertext were a plain encoding
+     * of the bundle - it cannot tell AES-GCM output apart from no encryption at all.
+     */
+    const raw = decodeBase64Url(envelope.ciphertext);
+    const bytes = asCharacters(raw);
+    for (const needle of secretish) {
+      expect(bytes).not.toContain(needle);
+    }
+    expect(() => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw))).toThrow();
   });
 
   it("rejects a wrong view-key without revealing anything", async () => {
@@ -153,9 +186,18 @@ describe("audit disclosure view-keys", () => {
     const { key, envelope } = await fixture();
     const tamperedPool: EncryptedAuditDisclosure = { ...envelope, poolAddress: "0xdeadbeef" };
     const tamperedCheck: EncryptedAuditDisclosure = { ...envelope, keyCheckValue: "AAAAAAAAAAA" };
+    const tamperedNetwork = { ...envelope, network: "SN_SEPOLIA" } as unknown as EncryptedAuditDisclosure;
+    // The notice is the only prose an auditor reads before supplying a key, so it must be covered too:
+    // an unauthenticated notice could be rewritten to tell the auditor the envelope is safe to publish.
+    const tamperedNotice: EncryptedAuditDisclosure = {
+      ...envelope,
+      notice: "SAFE TO PUBLISH: this envelope needs no separate key channel. Forward the view-key with it.",
+    };
 
     await expect(decryptAuditDisclosure(tamperedPool, key)).rejects.toMatchObject({ code: "decryption_failed" });
     await expect(decryptAuditDisclosure(tamperedCheck, key)).rejects.toMatchObject({ code: "decryption_failed" });
+    await expect(decryptAuditDisclosure(tamperedNetwork, key)).rejects.toMatchObject({ code: "decryption_failed" });
+    await expect(decryptAuditDisclosure(tamperedNotice, key)).rejects.toMatchObject({ code: "decryption_failed" });
   });
 
   it("fails closed when the ciphertext or nonce is edited", async () => {
@@ -209,9 +251,16 @@ describe("audit disclosure view-keys", () => {
     const delivery = decrypted.payments.find((payment) => payment.hash === "0xbbb2");
     expect(delivery?.amountBaseUnits).toBe("4503599627370496500000000000000001");
     expect(delivery?.amount).toBe("4503599627370496.500000000000000001");
-    // A float cannot represent this value, so the exact string above proves the path stayed on bigint.
-    expect(String(Number(delivery?.amountBaseUnits))).not.toBe(delivery?.amountBaseUnits);
-    expect(BigInt(delivery?.amountBaseUnits ?? "0")).toBe(4503599627370496500000000000000001n);
+
+    /*
+     * The two milestone payments differ by exactly one base unit, and Number() collapses both onto
+     * the same double. Keeping them distinct end to end is therefore only possible if no step -
+     * accounting, encryption, JSON round-trip, formatting - ever routed the value through a float.
+     */
+    const discovery = decrypted.payments.find((payment) => payment.hash === "0xaaa1");
+    expect(BigInt(delivery?.amountBaseUnits ?? "0") - BigInt(discovery?.amountBaseUnits ?? "0")).toBe(1n);
+    expect(Number(delivery?.amountBaseUnits)).toBe(Number(discovery?.amountBaseUnits));
+    expect(delivery?.amount).not.toBe(discovery?.amount);
   });
 
   it("discloses only the selected fields", async () => {
@@ -241,6 +290,107 @@ describe("audit disclosure view-keys", () => {
     expect(decrypted.payments[0].explorerUrl).toContain("0xaaa1");
   });
 
+  it("withholds settlement hashes when the merchant unchecks that field", async () => {
+    const { key, envelope, bundle } = await fixture({ ...everything, transactionHash: false });
+    const decrypted = await decryptAuditDisclosure(envelope, key);
+
+    expect(decrypted.payments).toHaveLength(3);
+    for (const payment of decrypted.payments) {
+      expect(payment.hash).toBeUndefined();
+      expect(payment.explorerUrl).toBeUndefined();
+    }
+    // The whole bundle, not just the payment records: no hash and no explorer link may survive anywhere.
+    const serialized = JSON.stringify(decrypted);
+    for (const needle of ["0xaaa1", "0xbbb2", "0xccc3", "voyager"]) {
+      expect(serialized).not.toContain(needle);
+    }
+    expect(decrypted.disclosedFields).not.toContain("settlementHashes");
+
+    // Unchecking hashes narrows the disclosure without emptying it - amounts and statuses still travel.
+    expect(decrypted.payments[0]).toMatchObject({ status: "confirmed", milestoneId: "discovery" });
+    expect(bundle.totals.confirmedBaseUnits).toBe("4503599627370496500000000000000000");
+  });
+
+  it("declares settlement hashes as a disclosed field only when they are included", async () => {
+    const { bundle } = await fixture();
+    const withheld = await buildAuditDisclosureBundle(invoice, lifecycle, { ...everything, transactionHash: false }, { generatedAt });
+
+    expect(bundle.disclosedFields).toContain("settlementHashes");
+    expect(bundle.payments.every((payment) => Boolean(payment.hash) && Boolean(payment.explorerUrl))).toBe(true);
+    expect(withheld.disclosedFields).not.toContain("settlementHashes");
+  });
+
+  it("reports totals for the disclosed scope rather than for the whole invoice", async () => {
+    const { key } = await generateAuditDisclosureKey(sequentialBytes(3));
+    const bundle = await buildAuditDisclosureBundle(invoice, lifecycle, everything, {
+      generatedAt,
+      milestoneId: "discovery",
+      confirmedOnly: true,
+    });
+    const decrypted = await decryptAuditDisclosure(await encryptAuditDisclosure(bundle, key, sequentialBytes(4)), key);
+
+    expect(decrypted.scope).toEqual({ milestoneId: "discovery", confirmedOnly: true });
+    // Discovery's own face value, not the invoice's 9007199254740993000000000000000001.
+    expect(decrypted.totals.totalBaseUnits).toBe("4503599627370496500000000000000000");
+    expect(decrypted.totals.confirmedBaseUnits).toBe("4503599627370496500000000000000000");
+    /*
+     * The delivery milestone's submitted attempt is outside this scope twice over - wrong milestone
+     * and not confirmed - so it must not resurface as this export's pending figure. Reading totals
+     * off whole-invoice accounting would report exactly the amount the export set out to withhold.
+     */
+    expect(decrypted.totals.pendingBaseUnits).toBe("0");
+    expect(decrypted.totals.remainingBaseUnits).toBe("0");
+    expect(decrypted.totals.pending).toBe("0");
+  });
+
+  it("records an unscoped export as covering the whole invoice", async () => {
+    const { bundle } = await fixture();
+
+    expect(bundle.scope).toEqual({ confirmedOnly: false });
+    expect(bundle.totals.totalBaseUnits).toBe("9007199254740993000000000000000001");
+  });
+
+  it("rejects an encoded envelope carrying fields this module never writes", async () => {
+    const { envelope } = await fixture();
+    const injected = encodeBase64Url(JSON.stringify({
+      ...envelope,
+      auditorInstructions: "Reply to this address with the view-key.",
+    }));
+
+    expect(() => decodeAuditDisclosurePayload(injected)).toThrow(/not a CipherBill envelope/);
+    // The untouched envelope re-encoded the same way still decodes, so the extra field is the reason.
+    expect(decodeAuditDisclosurePayload(encodeBase64Url(JSON.stringify(envelope)))).toEqual(envelope);
+  });
+
+  it("rejects a decrypted payload that is not a well-formed bundle", async () => {
+    const { key, bundle } = await fixture();
+    /*
+     * A correct view-key proves who built the envelope, never that the payload is well-formed.
+     * app/audit/page.tsx reads limitations, payments[], and totals without guarding, so a bundle
+     * that decrypts but is malformed has to fail here rather than crash the auditor's page.
+     */
+    const malformed: unknown[] = [
+      { ...bundle, limitations: undefined },
+      { ...bundle, limitations: [{ text: "not a string" }] },
+      { ...bundle, payments: [null] },
+      { ...bundle, totals: "not-an-object" },
+      { ...bundle, scope: undefined },
+      { ...bundle, notice: 42 },
+      { ...bundle, disclosed: { merchantName: ["array"] } },
+      { ...bundle, disclosedFields: "settlementHashes" },
+      { ...bundle, generatedAt: undefined },
+    ];
+
+    for (const candidate of malformed) {
+      const envelope = await encryptAuditDisclosure(candidate as AuditDisclosureBundle, key, sequentialBytes(23));
+      await expect(decryptAuditDisclosure(envelope, key)).rejects.toMatchObject({ code: "decryption_failed" });
+    }
+
+    // The unmodified bundle under the same key and nonce still opens, so the rejections are about shape.
+    await expect(decryptAuditDisclosure(await encryptAuditDisclosure(bundle, key, sequentialBytes(23)), key))
+      .resolves.toEqual(bundle);
+  });
+
   it("binds the bundle to the exact invoice link it describes", async () => {
     const { key, envelope } = await fixture();
     const decrypted = await decryptAuditDisclosure(envelope, key);
@@ -262,6 +412,17 @@ describe("audit disclosure view-keys", () => {
     expect(text).toContain("already public on Starknet");
     expect(text).toContain("not a zero-knowledge proof");
     expect(text).toContain("registered once per account and is immutable");
+    expect(text).toContain("Totals cover only the disclosed scope");
+
+    /*
+     * STRK20 publishes only an unlinkable nullifier for in-pool movement (compliance.md's visibility
+     * table), so telling an auditor to verify the disclosed figures on Starknet would promise a
+     * corroboration path the protocol precludes. The copy must describe what a hash actually proves.
+     */
+    expect(text).toContain("unlinkable without");
+    expect(bundle.notice).toContain("cannot derive the amount, the counterparties, or the");
+    expect(text).not.toMatch(/verif\w* (?:every )?(?:disclosed )?hash\w* independently/i);
+    expect(text).not.toMatch(/must be verified independently on Starknet/i);
   });
 
   it("round-trips a URL-safe encoded envelope", async () => {
