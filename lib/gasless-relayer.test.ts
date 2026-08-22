@@ -494,7 +494,7 @@ describe("gasless disclosure copy", () => {
   const text = [GASLESS_NOTICE, ...GASLESS_LIMITATIONS].join(" ");
 
   it("says where the fee comes from instead of calling the payment free", () => {
-    expect(text).toMatch(/withdraws the relayer's fee from your shielded balance/);
+    expect(text).toMatch(/paymaster or relayer fee required to submit, drawn from your shielded balance/);
     expect(text).toMatch(/not free/i);
     expect(text).not.toMatch(/\bno fee\b|\bzero fee\b|\bfee-free\b|\bcompletely free\b|\bfor free\b/i);
   });
@@ -513,8 +513,10 @@ describe("gasless disclosure copy", () => {
 
   it("keeps the credit with the protocol and states what stays public", () => {
     expect(GASLESS_NOTICE).toMatch(/not something CipherBill adds/);
-    expect(text).toMatch(/Only movement inside the pool is hidden/);
+    expect(text).toMatch(/only movement inside the pool is hidden/i);
     expect(text).toMatch(/submitting address is public/);
+    // The sender of a relayed transaction is the relayer's account for every user.
+    expect(text).toMatch(/never be attributed to a transaction's sender/);
   });
 
   it("explains what turning the toggle off actually changes", () => {

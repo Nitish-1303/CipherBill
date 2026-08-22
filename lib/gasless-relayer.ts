@@ -206,10 +206,10 @@ export function describeGaslessPlan(
   }
 
   if (!plan.sufficient) {
-    return `Short by ${amount(plan.shortfallBaseUnits)}. This payment needs ${amount(plan.requiredBaseUnits)} shielded: ${amount(plan.paymentBaseUnits)} to the merchant plus ${amount(plan.feeReserveBaseUnits)} the wallet withdraws to pay the relayer that submits it. You hold ${amount(plan.shieldedBalanceBaseUnits)}.`;
+    return `Short by ${amount(plan.shortfallBaseUnits)}. This payment needs ${amount(plan.requiredBaseUnits)} shielded: ${amount(plan.paymentBaseUnits)} to the merchant plus ${amount(plan.feeReserveBaseUnits)} the wallet withdraws to cover the fee for submitting it. You hold ${amount(plan.shieldedBalanceBaseUnits)}.`;
   }
 
-  return `Gasless: your public account pays nothing and needs no STRK or ETH for gas. The wallet withdraws ${amount(plan.feeReserveBaseUnits)} from your shielded balance for the relayer, so ${amount(plan.requiredBaseUnits)} of your ${amount(plan.shieldedBalanceBaseUnits)} is committed and ${amount(plan.surplusBaseUnits)} stays shielded.`;
+  return `Gasless: your public account pays nothing and needs no STRK or ETH for gas. The wallet withdraws ${amount(plan.feeReserveBaseUnits)} from your shielded balance to cover the fee for submitting, so ${amount(plan.requiredBaseUnits)} of your ${amount(plan.shieldedBalanceBaseUnits)} is committed and ${amount(plan.surplusBaseUnits)} stays shielded.`;
 }
 
 /**
@@ -580,12 +580,12 @@ export async function verifyInvoiceTermsAttestation(
  * it true. Rendered verbatim next to the toggle so the wording cannot drift from what the
  * code does.
  */
-export const GASLESS_NOTICE = "Paying through the STRK20 pool never touches your public account balance: the wallet withdraws the relayer's fee from your shielded balance inside the same proven transaction, so you need no ETH or public STRK for gas. This is how the STRK20 wallet method works, not something CipherBill adds.";
+export const GASLESS_NOTICE = "Paying through the STRK20 pool never touches your public account balance: the wallet adds its own withdrawal covering the paymaster or relayer fee required to submit, drawn from your shielded balance inside the same proven transaction, so you need no ETH or public STRK for gas. This is how the STRK20 wallet method works, not something CipherBill adds.";
 
 export const GASLESS_LIMITATIONS: readonly string[] = [
-  "Gasless is not free. The relayer fee is real and comes out of your shielded balance, so a balance that only covers the payment is still short.",
+  "Gasless is not free. The fee for submitting is real and comes out of your shielded balance, so a balance that only covers the payment is still short.",
   "CipherBill does not run a relayer or a paymaster. The wallet chooses who submits, and CipherBill never sees or holds your funds.",
   "Nothing here is a meta-transaction. STRK20 authorizes a pool action with a zero-knowledge proof and nullifiers bound to your registered viewing key, not with an off-chain signature a third party could replay.",
   "Turning this toggle off does not make a payment cost gas from your account. It only skips CipherBill's local fee-reserve check and lets the wallet report a shortfall itself.",
-  "The relayer's submitting address is public, and so are any deposits or withdrawals at the pool edges. Only movement inside the pool is hidden.",
+  "The submitting address is public whoever it belongs to. When a relayer submits, that sender is the relayer's account for every user, so pool activity can never be attributed to a transaction's sender. Deposits and withdrawals at the pool edges stay public too: only movement inside the pool is hidden.",
 ];
