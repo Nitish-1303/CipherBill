@@ -378,17 +378,17 @@ export function readEphemeralState(
   now = new Date(),
 ): EphemeralInvoiceState {
   validateEnvelope(envelope);
-  try {
-    const target = storage ?? (typeof window === "undefined" ? null : window.localStorage);
-    if (!target) return createEphemeralInvoiceState(envelope, now);
-    const registry: unknown = JSON.parse(target.getItem(STORAGE_KEY) ?? "{}");
-    if (!registry || typeof registry !== "object" || Array.isArray(registry)) return createEphemeralInvoiceState(envelope, now);
-    const state = (registry as Record<string, unknown>)[envelope.linkCommitment];
-    validateState(envelope, state);
-    return state;
-  } catch {
-    return createEphemeralInvoiceState(envelope, now);
-  }
+  const target = storage ?? (typeof window === "undefined" ? null : window.localStorage);
+  if (!target) return createEphemeralInvoiceState(envelope, now);
+  const serialized = target.getItem(STORAGE_KEY);
+  if (serialized === null) return createEphemeralInvoiceState(envelope, now);
+  let registry: unknown;
+  try { registry = JSON.parse(serialized); } catch { throw new Error("Ephemeral state registry is corrupted; capability redemption fails closed."); }
+  if (!registry || typeof registry !== "object" || Array.isArray(registry)) throw new Error("Ephemeral state registry is corrupted; capability redemption fails closed.");
+  const state = (registry as Record<string, unknown>)[envelope.linkCommitment];
+  if (state === undefined) return createEphemeralInvoiceState(envelope, now);
+  try { validateState(envelope, state); } catch { throw new Error("Ephemeral state is corrupted; capability redemption fails closed."); }
+  return state;
 }
 
 export function writeEphemeralState(

@@ -52,7 +52,19 @@ const receiptFieldLabels: Record<keyof ReceiptDisclosureSelection, string> = {
   timestamps: "Submission timestamps",
 };
 
-export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: string }>) {
+export function InvoicePayment({
+  encodedPayload,
+  ephemeralBanner,
+  onPaymentSubmitted,
+  onPaymentConfirmed,
+  onPaymentFailed,
+}: Readonly<{
+  encodedPayload: string;
+  ephemeralBanner?: React.ReactNode;
+  onPaymentSubmitted?: (transactionHash: string) => void;
+  onPaymentConfirmed?: (transactionHash: string) => void;
+  onPaymentFailed?: (transactionHash: string) => void;
+}>) {
   const { account, status: walletStatus, capabilities } = useWallet();
   const [decoded, setDecoded] = useState<InvoiceDecodeResult | null>(null);
   const [lifecycle, setLifecycle] = useState<InvoiceLifecycle | null>(null);
@@ -199,6 +211,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
         setReceiptGeneratedAt(new Date());
         setPaymentPhase("confirming");
         setMessage("Submitted to official STRK20 pool. Confirming on Starknet mainnet; do not submit this invoice again. Hash is immutably retained.");
+        onPaymentSubmitted?.(submittedTransaction.hash);
       });
 
       setTransaction(result);
@@ -210,6 +223,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
         setPaymentPhase("confirmed");
         setMessage("Payment confirmed by the configured Starknet RPC. Transaction hash is immutably retained for receipt generation.");
         setPaymentTarget(invoice, confirmed, setSelectedMilestoneId, setPaymentAmount);
+        onPaymentConfirmed?.(result.hash);
       } else if (result.status === "submitted") {
         setPaymentPhase("delayed");
         setMessage("Payment submitted to official pool, but confirmation is delayed. The transaction hash is immutably preserved below; do not resubmit.");
@@ -218,6 +232,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
         persist(failed);
         setPaymentPhase("reverted");
         setMessage("The submitted payment reverted. The transaction hash is immutably preserved below and the unpaid balance is available again.");
+        onPaymentFailed?.(result.hash);
       }
     } catch (error) {
       if (submittedLifecycle) {
@@ -274,6 +289,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
 
   return (
     <InvoiceDetails invoice={invoice} lifecycle={currentLifecycle} message={message}>
+      {ephemeralBanner}
       <section className="invoice-payment-controls" aria-labelledby="payment-heading">
         <h2 id="payment-heading">Choose this payment</h2>
         {invoice.milestones?.length ? (
