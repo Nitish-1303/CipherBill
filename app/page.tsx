@@ -1,6 +1,19 @@
+"use client";
+
+import { useState } from "react";
 import { PrivatePayment } from "@/components/private-payment";
 import { InvoicePanel } from "@/components/invoice-panel";
 import { WalletConnect } from "@/components/wallet-connect";
+import { BatchPayrollDashboard } from "@/components/batch-payroll";
+import { InvoiceDashboard } from "@/components/invoice-dashboard";
+
+const tabs = [
+  ["invoice", "Single Invoice"],
+  ["payroll", "Batch Payroll Dispersal"],
+  ["audit", "Auditor Disclosures"],
+] as const;
+
+type Tab = (typeof tabs)[number][0];
 
 const steps = [
   ["01", "Shield", "Move STRK into a shielded balance through the live privacy pool."],
@@ -9,6 +22,8 @@ const steps = [
 ];
 
 export default function Home() {
+  const [tab, setTab] = useState<Tab>("invoice");
+
   return (
     <main>
       <nav>
@@ -35,7 +50,16 @@ export default function Home() {
         </div>
       </section>
 
-      <InvoicePanel />
+      <section className="dashboard-section" id="demo">
+        <div style={{ display: "flex", gap: "16px", justifyContent: "center", marginBottom: "32px", flexWrap: "wrap" }}>
+          {tabs.map(([value, label]) => (
+            <button key={value} onClick={() => setTab(value)} style={{ background: tab === value ? "#2563eb" : "rgba(255,255,255,0.05)", color: "white", padding: "10px 20px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: "bold" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {tab === "invoice" ? <InvoicePanel /> : tab === "payroll" ? <BatchPayrollDashboard /> : <InvoiceDashboard />}
+      </section>
 
       <section className="privacy-model">
         <div className="section-heading"><span>Selective disclosure</span><h2>Useful privacy, honest edges.</h2></div>
