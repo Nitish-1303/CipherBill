@@ -4,6 +4,13 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import {
+  describeGaslessPlan,
+  GASLESS_LIMITATIONS,
+  GASLESS_NOTICE,
+  mapWalletGaslessError,
+  planGaslessPayment,
+} from "@/lib/gasless-relayer";
+import {
   confirmInvoicePayment,
   deriveInvoiceStatus,
   failInvoicePayment,
@@ -52,6 +59,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
   const [selectedMilestoneId, setSelectedMilestoneId] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentPhase, setPaymentPhase] = useState<PaymentPhase>("idle");
+  const [gaslessRelayed, setGaslessRelayed] = useState(true);
   const [transaction, setTransaction] = useState<PrivacyTransaction | null>(null);
   const [message, setMessage] = useState("Review every invoice field before connecting a wallet.");
   const [receiptSelection, setReceiptSelection] = useState(DEFAULT_RECEIPT_SELECTION);
@@ -95,6 +103,7 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
     && invoice.tokenDecimals === 18;
   const paymentError = getPaymentValidationError(invoice, currentLifecycle, paymentAmount, selectedMilestoneId);
   const acceptingPayments = ["active", "partially_paid"].includes(lifecycleStatus);
+  const paymentInFlight = ["checking_registration", "preparing", "confirming", "delayed"].includes(paymentPhase);
   const latestReceiptPayment = [...currentLifecycle.payments].reverse().find((payment) => payment.status !== "failed");
   const receipt = latestReceiptPayment
     ? createSelectiveReceipt(invoice, latestReceiptPayment, receiptSelection, receiptGeneratedAt)
@@ -144,20 +153,35 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
       }
 
       setPaymentPhase("preparing");
-      setMessage("Requesting shielded-balance access to verify this payment and the current pool fee from the official pool.");
+      const token = { symbol: invoice.tokenSymbol, decimals: invoice.tokenDecimals };
 
-      const [balance, fee] = await Promise.all([client.getBalance(), client.getFeeAmount()]);
-      const poolFee = BigInt(fee);
+      if (gaslessRelayed) {
+        // Gasless preflight. The relayer fee is withdrawn from the same shielded balance
+        // this payment spends, so a balance covering only the payment is still short. The
+        // wallet would reject it with INSUFFICIENT_PRIVATE_BALANCE after the payer has
+        // already sat through proof generation; reserving for it here fails fast instead.
+        setMessage("Reading your shielded balance and the current pool fee, so the relayer fee is reserved before you sign anything.");
+        const [balance, fee] = await Promise.all([client.getBalance(), client.getFeeAmount()]);
+        const plan = planGaslessPayment({
+          paymentBaseUnits: amountBaseUnits,
+          shieldedBalanceBaseUnits: balance.amount,
+          relayerFeeBaseUnits: fee,
+        });
 
-      // Bigint-safe amount validation
-      const paymentAmountBigInt = BigInt(amountBaseUnits);
-      if (paymentAmountBigInt + poolFee > BigInt(balance.amount)) {
-        setPaymentPhase("failed_before_submission");
-        setMessage(`Insufficient shielded STRK for this payment (${baseUnitsToDecimal(paymentAmountBigInt, invoice.tokenDecimals)} STRK) plus the current pool fee (${baseUnitsToDecimal(poolFee, invoice.tokenDecimals)} STRK). Total required: ${baseUnitsToDecimal(paymentAmountBigInt + poolFee, invoice.tokenDecimals)} STRK.`);
-        return;
+        if (!plan.sufficient) {
+          setPaymentPhase("failed_before_submission");
+          setMessage(describeGaslessPlan(plan, token));
+          return;
+        }
+
+        setMessage(`${describeGaslessPlan(plan, token)} Confirm the private transfer in your wallet.`);
+      } else {
+        // Direct submission. Still relayed, still no public gas token needed - the only
+        // difference is that CipherBill does not read the fee first, so the wallet is the
+        // one that reports a shortfall.
+        setMessage(`Submitting directly to the official pool ${STRK20_POOL_ADDRESS.slice(0, 10)}... without a local fee-reserve check. Your wallet will report a shortfall itself if your shielded balance cannot cover this payment plus the relayer fee it withdraws. Confirm the private transfer in your wallet.`);
       }
 
-      setMessage(`Confirm the private transfer in your wallet. Current pool fee: ${baseUnitsToDecimal(poolFee, invoice.tokenDecimals)} STRK from official pool ${STRK20_POOL_ADDRESS.slice(0, 10)}...`);
       const result = await client.privateTransfer({
         recipient: invoice.recipientAddress,
         amount: paymentAmount,
@@ -203,8 +227,13 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
         setPaymentPhase("rejected");
         setMessage("Wallet request rejected. No transaction hash was returned.");
       } else {
+        // Documented STRK20 wallet failures get their own explanation; anything else keeps
+        // its own message, which is usually a local validation error worth reading verbatim.
+        const explained = mapWalletGaslessError(error);
         setPaymentPhase("failed_before_submission");
-        setMessage(error instanceof Error ? error.message : "Payment failed before submission. No transaction hash was returned.");
+        setMessage(explained.code === "UNKNOWN_ERROR"
+          ? (error instanceof Error ? error.message : explained.message)
+          : explained.message);
       }
     } finally {
       releaseSubmission(paymentLock);
@@ -269,6 +298,20 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
           />
         </label>
         <p className="status">{invoice.allowPartialPayments ? "A smaller positive amount is allowed up to the selected balance." : invoice.milestones?.length ? "Each milestone is paid at its exact remaining balance." : "This invoice requires its exact remaining balance."}</p>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={gaslessRelayed}
+            onChange={(event) => setGaslessRelayed(event.target.checked)}
+            disabled={!acceptingPayments || paymentInFlight}
+          />
+          Pay Gasless (Relayed)
+        </label>
+        <p className="status">
+          {gaslessRelayed
+            ? "On: CipherBill reads the current pool fee and reserves it from your shielded balance before you sign, so a payment is not rejected after proving for a shortfall it could have predicted."
+            : "Off: CipherBill skips that local check and submits directly. The payment is still relayed and still needs no public gas token - your wallet reports any shortfall itself."}
+        </p>
         {paymentError && acceptingPayments ? <p className="error-message">{paymentError}</p> : null}
       </section>
 
@@ -303,10 +346,21 @@ export function InvoicePayment({ encodedPayload }: Readonly<{ encodedPayload: st
       ) : null}
       {!tokenSupported ? <p className="error-message">This CipherBill build supports STRK invoices with 18 decimals only. Payment is blocked.</p> : null}
       {!walletReady ? <div className="invoice-wallet"><p>Connect a privacy-enabled wallet on SN_MAIN with Wallet API 0.10.3 or newer.</p><WalletConnect /></div> : null}
-      <button className="pay-invoice-button" type="button" onClick={pay} disabled={!walletReady || !tokenSupported || !acceptingPayments || Boolean(paymentError) || ["checking_registration", "preparing", "confirming", "delayed"].includes(paymentPhase)}>
-        {paymentPhase === "checking_registration" ? "Verifying registration..." : paymentPhase === "preparing" ? "Preparing..." : paymentPhase === "confirming" ? "Confirming..." : paymentPhase === "delayed" ? "Confirmation delayed" : lifecycleStatus === "paid" ? "Invoice paid" : "Pay privately"}
+      <button className="pay-invoice-button" type="button" onClick={pay} disabled={!walletReady || !tokenSupported || !acceptingPayments || Boolean(paymentError) || paymentInFlight}>
+        {paymentPhase === "checking_registration" ? "Verifying registration..." : paymentPhase === "preparing" ? "Preparing..." : paymentPhase === "confirming" ? "Confirming..." : paymentPhase === "delayed" ? "Confirmation delayed" : lifecycleStatus === "paid" ? "Invoice paid" : gaslessRelayed ? "Pay privately (gasless)" : "Pay privately"}
       </button>
       {transaction ? <a className="transaction-link" href={getStarknetExplorerTransactionUrl(transaction.hash)} target="_blank" rel="noreferrer">View submitted transaction on Voyager</a> : null}
+
+      {/*
+        Rendered whether or not the toggle is on. A payer who switches it off has not opted
+        out of relaying - relaying is how the STRK20 wallet method works - so the wording
+        that explains what "gasless" costs and who submits has to be visible either way.
+      */}
+      <div className="privacy-notice">
+        <strong>What &ldquo;gasless&rdquo; means here</strong>
+        <p>{GASLESS_NOTICE}</p>
+        {GASLESS_LIMITATIONS.map((limitation) => <p key={limitation}>&middot; {limitation}</p>)}
+      </div>
 
       {receipt ? (
         <section className="receipt-builder" aria-labelledby="receipt-heading">
