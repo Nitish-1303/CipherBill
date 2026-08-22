@@ -1,6 +1,6 @@
-import { InvoicePayment } from "@/components/invoice-payment";
+import { PayRouter } from "@/components/pay-router";
 
 export default async function PayInvoicePage({ params }: Readonly<{ params: Promise<{ payload: string }> }>) {
   const { payload } = await params;
-  return <InvoicePayment encodedPayload={payload} />;
+  return <PayRouter encodedPayload={payload} />;
 }
