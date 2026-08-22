@@ -179,7 +179,7 @@ describe("ephemeral one-time invoices", () => {
     const raw = JSON.parse(storage.getItem("cipherbill.ephemeral-state.v1") ?? "{}") as Record<string, EphemeralInvoiceState>;
     raw[created.envelope.linkCommitment] = { ...burned, transactionHash: "0x999" };
     storage.setItem("cipherbill.ephemeral-state.v1", JSON.stringify(raw));
-    expect(readEphemeralState(created.envelope, storage, CONFIRMED_AT).status).toBe("sealed");
+    expect(() => readEphemeralState(created.envelope, storage, CONFIRMED_AT)).toThrow("fails closed");
   });
 
   it("states the boundary between local destruction and global revocation", () => {

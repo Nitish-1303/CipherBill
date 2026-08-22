@@ -9,12 +9,15 @@ import {
   encodeInvoicePayload,
   invoicePaymentUrl,
   type LocalInvoiceRecord,
+  type ShareableInvoice,
   readInvoices,
   writeInvoices,
 } from "@/lib/invoices";
 import { readReputationAttestation, verifyReputationProof, type ReputationAttestation } from "@/lib/reputation-engine";
 import { STRK_TOKEN_ADDRESS } from "@/lib/strk20/config";
 import { areSameStarknetAddress } from "@/lib/strk20/validation";
+
+import { EphemeralLinkGenerator } from "./ephemeral-badge";
 
 const emptyForm = {
   merchantName: "",
@@ -23,6 +26,7 @@ const emptyForm = {
   description: "",
   referenceNumber: "",
   expiresAt: "",
+  ephemeral: false,
   allowPartialPayments: false,
   milestones: [] as Array<{ id: string; label: string; amount: string }>,
 };
@@ -36,6 +40,7 @@ export function InvoicePanel() {
   const [form, setForm] = useState(emptyForm);
   const [invoices, setInvoices] = useState<LocalInvoiceRecord[]>([]);
   const [generated, setGenerated] = useState<GeneratedInvoice | null>(null);
+  const [ephemeralInvoice, setEphemeralInvoice] = useState<ShareableInvoice | null>(null);
   const [creating, setCreating] = useState(false);
   const [reputationAttestation, setReputationAttestation] = useState<ReputationAttestation | null>(null);
   const [message, setMessage] = useState("Create a self-contained link that can be opened on another device.");
@@ -68,10 +73,18 @@ export function InvoicePanel() {
         description: form.description,
         referenceNumber: form.referenceNumber || undefined,
         expiresAt: new Date(form.expiresAt).toISOString(),
-        allowPartialPayments: form.allowPartialPayments,
-        milestones: form.milestones.length ? form.milestones : undefined,
+        allowPartialPayments: form.ephemeral ? false : form.allowPartialPayments,
+        milestones: !form.ephemeral && form.milestones.length ? form.milestones : undefined,
         reputationProof: getCurrentMerchantProof(reputationAttestation, form.recipientAddress),
       });
+      if (form.ephemeral) {
+        if (saveAsDraft) throw new Error("Ephemeral invoices cannot be drafts because their capability key is generated only once.");
+        setEphemeralInvoice(invoice);
+        setGenerated(null);
+        setForm(emptyForm);
+        setMessage(`Encrypting one-time invoice ${invoice.invoiceId}. It will not be written to ordinary local invoice history.`);
+        return;
+      }
       const encodedPayload = await encodeInvoicePayload(invoice);
       const record: LocalInvoiceRecord = {
         invoice,
@@ -81,6 +94,7 @@ export function InvoicePanel() {
       };
       const url = invoicePaymentUrl(encodedPayload);
       persist([record, ...invoices]);
+      setEphemeralInvoice(null);
       setGenerated(saveAsDraft ? null : { record, url });
       setForm(emptyForm);
       setMessage(saveAsDraft
@@ -193,8 +207,9 @@ export function InvoicePanel() {
           <label>Description<input required maxLength={160} placeholder="Design retainer" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
           <label>Reference number (optional)<input maxLength={64} placeholder="PO-1042" value={form.referenceNumber} onChange={(event) => setForm({ ...form, referenceNumber: event.target.value })} /></label>
           <label>Expires at<input required type="datetime-local" value={form.expiresAt} onChange={(event) => setForm({ ...form, expiresAt: event.target.value })} /></label>
-          <label className="checkbox-label"><input type="checkbox" checked={form.allowPartialPayments} onChange={(event) => setForm({ ...form, allowPartialPayments: event.target.checked })} />Allow partial payments</label>
-          <fieldset className="milestone-editor">
+          <label className="checkbox-label ephemeral-toggle"><input type="checkbox" checked={form.ephemeral} onChange={(event) => setForm({ ...form, ephemeral: event.target.checked, allowPartialPayments: event.target.checked ? false : form.allowPartialPayments, milestones: event.target.checked ? [] : form.milestones })} />Burn after one settlement or TTL expiry</label>
+          <label className="checkbox-label"><input type="checkbox" disabled={form.ephemeral} checked={form.allowPartialPayments} onChange={(event) => setForm({ ...form, allowPartialPayments: event.target.checked })} />Allow partial payments</label>
+          <fieldset className="milestone-editor" disabled={form.ephemeral}>
             <legend>Milestones (optional, maximum 8)</legend>
             {form.milestones.map((milestone, index) => (
               <div className="milestone-row" key={milestone.id}>
@@ -207,20 +222,21 @@ export function InvoicePanel() {
             <p className="status">Milestone amounts must equal the invoice total exactly.</p>
           </fieldset>
           <div className="invoice-submit-row">
-            <button type="submit" value="draft" disabled={creating}>{creating ? "Saving..." : "Save draft"}</button>
-            <button type="submit" value="active" disabled={creating}>{creating ? "Generating..." : "Activate and generate link"}</button>
+            <button type="submit" value="draft" disabled={creating || form.ephemeral}>{creating ? "Saving..." : "Save draft"}</button>
+            <button type="submit" value="active" disabled={creating}>{creating ? "Generating..." : form.ephemeral ? "Encrypt one-time link" : "Activate and generate link"}</button>
           </div>
           <p className="status">Network: SN_MAIN. Token address and payment amount are locked into the link.</p>
           <p className="status">Never put private keys, seed phrases, viewing keys, RPC keys, wallet history, notes, or proofs in invoice fields.</p>
           <aside className="composer-privacy-preview">
-            <strong>Link privacy preview</strong>
-            <p>Anyone with the URL can read the merchant name and address, amount, description, reference, expiration, payment policy, and every milestone entered above.</p>
-            <p>The link contains no payer identity or wallet state. Its checksum detects edits but does not authenticate the merchant.</p>
+            <strong>{form.ephemeral ? "Ephemeral privacy preview" : "Link privacy preview"}</strong>
+            <p>{form.ephemeral ? "Invoice fields are AES-GCM encrypted. The bearer key stays after # in the URL fragment, which browsers do not send in HTTP requests." : "Anyone with the URL can read the merchant name and address, amount, description, reference, expiration, payment policy, and every milestone entered above."}</p>
+            <p>{form.ephemeral ? "One exact payment only. This browser burns its mutable key buffer after confirmation or expiry, but copied URLs cannot be globally revoked without shared state." : "The link contains no payer identity or wallet state. Its checksum detects edits but does not authenticate the merchant."}</p>
           </aside>
         </form>
 
         <div className="invoice-list">
           <p className="status" role="status" aria-live="polite">{message}</p>
+          {ephemeralInvoice ? <EphemeralLinkGenerator invoice={ephemeralInvoice} onMessage={setMessage} /> : null}
           {generated ? (
             <article className="invoice-item invoice-preview">
               <div><strong>Generated link</strong><span>schema v{generated.record.invoice.version}</span></div>
