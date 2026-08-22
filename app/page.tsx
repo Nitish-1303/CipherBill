@@ -7,12 +7,16 @@ import { WalletConnect } from "@/components/wallet-connect";
 import { BatchPayrollDashboard } from "@/components/batch-payroll";
 import { InvoiceDashboard } from "@/components/invoice-dashboard";
 import { EscrowPortal } from "@/components/escrow-portal";
+import { FiatConverter } from "@/components/fiat-converter";
+import { ArbitrationVault } from "@/components/arbitration-vault";
 
 const tabs = [
   ["invoice", "Single Invoice"],
   ["payroll", "Batch Payroll Dispersal"],
   ["audit", "Auditor Disclosures"],
   ["escrow", "Enterprise Escrow"],
+  ["fiat", "Fiat Shielding"],
+  ["disputes", "Arbitration Vault"],
 ] as const;
 
 type Tab = (typeof tabs)[number][0];
@@ -60,7 +64,7 @@ export default function Home() {
             </button>
           ))}
         </div>
-        {tab === "invoice" ? <InvoicePanel /> : tab === "payroll" ? <BatchPayrollDashboard /> : tab === "audit" ? <InvoiceDashboard /> : <EscrowPortal />}
+        {tab === "invoice" ? <InvoicePanel /> : tab === "payroll" ? <BatchPayrollDashboard /> : tab === "audit" ? <InvoiceDashboard /> : tab === "escrow" ? <EscrowPortal /> : tab === "fiat" ? <FiatConverter /> : <ArbitrationVault />}
       </section>
 
       <section className="privacy-model">
