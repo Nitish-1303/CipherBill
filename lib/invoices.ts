@@ -8,6 +8,7 @@ export const MAX_INVOICE_JSON_BYTES = 6_000;
 export const MAX_TOKEN_DECIMALS = 18;
 export const MAX_INVOICE_LIFETIME_MS = 365 * 24 * 60 * 60 * 1_000;
 export const MAX_INVOICE_MILESTONES = 8;
+export const MAX_INVOICE_REBATE_BPS = 2_500;
 
 const CHECKSUM_BYTES = 16;
 const STORAGE_KEY = "cipherbill.invoices.v2";
@@ -17,9 +18,10 @@ const SECRET_VALUE = /\b(api key|private key|seed phrase|mnemonic|viewing key)\b
 const ALLOWED_FIELDS = new Set([
   "version", "invoiceId", "merchantName", "recipientAddress", "tokenAddress", "tokenSymbol",
   "tokenDecimals", "amount", "description", "referenceNumber", "createdAt", "expiresAt", "network",
-  "allowPartialPayments", "milestones",
+  "allowPartialPayments", "milestones", "rebatePolicy",
 ]);
 const ALLOWED_MILESTONE_FIELDS = new Set(["id", "label", "amount"]);
+const ALLOWED_REBATE_FIELDS = new Set(["version", "maximumRebateBps", "minimumLeadTimeSeconds", "fullRebateLeadTimeSeconds"]);
 
 interface ShareableInvoiceV1 {
   version: 1;
@@ -43,6 +45,13 @@ export interface InvoiceMilestone {
   amount: string;
 }
 
+export interface InvoiceRebatePolicy {
+  version: 1;
+  maximumRebateBps: number;
+  minimumLeadTimeSeconds: number;
+  fullRebateLeadTimeSeconds: number;
+}
+
 export interface ShareableInvoice {
   version: typeof INVOICE_SCHEMA_VERSION;
   invoiceId: string;
@@ -59,6 +68,7 @@ export interface ShareableInvoice {
   network: typeof MAINNET_CHAIN_ID;
   allowPartialPayments: boolean;
   milestones?: InvoiceMilestone[];
+  rebatePolicy?: InvoiceRebatePolicy;
 }
 
 export interface CreateInvoiceInput {
@@ -73,6 +83,7 @@ export interface CreateInvoiceInput {
   expiresAt: string;
   allowPartialPayments?: boolean;
   milestones?: InvoiceMilestone[];
+  rebatePolicy?: InvoiceRebatePolicy;
 }
 
 export interface LocalInvoiceRecord {
@@ -118,6 +129,7 @@ export function createShareableInvoice(
     network: MAINNET_CHAIN_ID,
     allowPartialPayments: Boolean(input.allowPartialPayments),
     milestones: input.milestones?.length ? input.milestones : undefined,
+    rebatePolicy: input.rebatePolicy,
   });
 
   if (Date.parse(invoice.expiresAt) <= now.getTime()) {
@@ -230,7 +242,7 @@ function validateInvoice(value: unknown): ShareableInvoice {
     throw new InvoiceValidationError("unsupported_version", "This invoice schema version is not supported.");
   }
   const allowedFields = record.version === 1
-    ? new Set([...ALLOWED_FIELDS].filter((key) => key !== "allowPartialPayments" && key !== "milestones"))
+    ? new Set([...ALLOWED_FIELDS].filter((key) => !["allowPartialPayments", "milestones", "rebatePolicy"].includes(key)))
     : ALLOWED_FIELDS;
   if (keys.some((key) => !allowedFields.has(key))) {
     throw new InvoiceValidationError("unsafe_field", "Invoice payload contains unsupported fields.");
@@ -276,6 +288,12 @@ function validateInvoice(value: unknown): ShareableInvoice {
   const milestones = record.version === INVOICE_SCHEMA_VERSION
     ? validateMilestones(record.milestones, record.tokenDecimals as number, amount)
     : undefined;
+  const rebatePolicy = record.version === INVOICE_SCHEMA_VERSION
+    ? validateInvoiceRebatePolicy(record.rebatePolicy)
+    : undefined;
+  if (rebatePolicy && (record.allowPartialPayments || milestones?.length)) {
+    throw new InvoiceValidationError("incomplete", "Early rebates require one exact payment without milestones.");
+  }
 
   const createdMs = Date.parse(createdAt);
   const expiresMs = Date.parse(expiresAt);
@@ -299,6 +317,36 @@ function validateInvoice(value: unknown): ShareableInvoice {
     network: MAINNET_CHAIN_ID,
     allowPartialPayments: record.version === INVOICE_SCHEMA_VERSION ? record.allowPartialPayments as boolean : false,
     ...(milestones ? { milestones } : {}),
+    ...(rebatePolicy ? { rebatePolicy } : {}),
+  };
+}
+
+function validateInvoiceRebatePolicy(value: unknown): InvoiceRebatePolicy | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new InvoiceValidationError("incomplete", "Early-rebate policy is invalid.");
+  }
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).some((key) => SECRET_FIELD.test(key) || !ALLOWED_REBATE_FIELDS.has(key))) {
+    throw new InvoiceValidationError("unsafe_field", "Early-rebate policy contains unsupported or secret-like fields.");
+  }
+  if (record.version !== 1) throw new InvoiceValidationError("incomplete", "Early-rebate policy version is unsupported.");
+  if (!Number.isInteger(record.maximumRebateBps) || (record.maximumRebateBps as number) <= 0 || (record.maximumRebateBps as number) > MAX_INVOICE_REBATE_BPS) {
+    throw new InvoiceValidationError("incomplete", `Maximum rebate must be between 1 and ${MAX_INVOICE_REBATE_BPS} basis points.`);
+  }
+  if (!Number.isInteger(record.minimumLeadTimeSeconds) || (record.minimumLeadTimeSeconds as number) < 0) {
+    throw new InvoiceValidationError("incomplete", "Minimum rebate lead time must be a non-negative whole number of seconds.");
+  }
+  if (
+    !Number.isInteger(record.fullRebateLeadTimeSeconds)
+    || (record.fullRebateLeadTimeSeconds as number) <= (record.minimumLeadTimeSeconds as number)
+    || (record.fullRebateLeadTimeSeconds as number) > MAX_INVOICE_LIFETIME_MS / 1_000
+  ) throw new InvoiceValidationError("incomplete", "Full-rebate lead time must exceed the minimum and fit within one year.");
+  return {
+    version: 1,
+    maximumRebateBps: record.maximumRebateBps as number,
+    minimumLeadTimeSeconds: record.minimumLeadTimeSeconds as number,
+    fullRebateLeadTimeSeconds: record.fullRebateLeadTimeSeconds as number,
   };
 }
 
