@@ -114,6 +114,20 @@ describe("shareable invoice payloads", () => {
     await expect(decodeInvoicePayload(await signRaw(unsafe))).resolves.toMatchObject({ status: "invalid", code: "unsafe_field" });
   });
 
+  it("round-trips a bounded early-rebate policy and rejects incompatible payment modes", async () => {
+    const rebateInvoice = {
+      ...invoice,
+      allowPartialPayments: false,
+      milestones: undefined,
+      rebatePolicy: { version: 1 as const, maximumRebateBps: 750, minimumLeadTimeSeconds: 3_600, fullRebateLeadTimeSeconds: 604_800 },
+    };
+    const decoded = await decodeInvoicePayload(await encodeInvoicePayload(rebateInvoice), Date.parse("2028-01-15T00:00:00.000Z"));
+    expect(decoded).toMatchObject({ status: "valid", invoice: { rebatePolicy: { maximumRebateBps: 750 } } });
+    await expect(decodeInvoicePayload(await signRaw({ ...rebateInvoice, allowPartialPayments: true }))).resolves.toMatchObject({ status: "invalid", code: "incomplete" });
+    await expect(decodeInvoicePayload(await signRaw({ ...rebateInvoice, rebatePolicy: { ...rebateInvoice.rebatePolicy, maximumRebateBps: 2_501 } }))).resolves.toMatchObject({ status: "invalid", code: "incomplete" });
+    await expect(decodeInvoicePayload(await signRaw({ ...rebateInvoice, rebatePolicy: { ...rebateInvoice.rebatePolicy, privateKey: "nope" } }))).resolves.toMatchObject({ status: "invalid", code: "unsafe_field" });
+  });
+
   it("handles corrupt local history safely", () => {
     expect(readInvoices({ getItem: () => "{broken" })).toEqual([]);
     expect(readInvoices({ getItem: () => JSON.stringify([{ invoice: null }]) })).toEqual([]);
