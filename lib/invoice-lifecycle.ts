@@ -1,4 +1,5 @@
 import type { ShareableInvoice } from "./invoices";
+import { calculateEligibleRebateBps, REBATE_BPS_DENOMINATOR, REBATE_QUOTE_TTL_MS } from "./rebate-engine";
 import { decimalToBaseUnits } from "./strk20/validation";
 
 export type InvoiceLifecycleStatus =
@@ -17,6 +18,11 @@ export interface InvoicePaymentRecord {
   hash: string;
   amountBaseUnits: string;
   milestoneId?: string;
+  rebateBaseUnits?: string;
+  rebateBps?: number;
+  rebateCommitment?: string;
+  rebateIssuedAt?: string;
+  rebateValidUntil?: string;
   status: InvoicePaymentStatus;
   submittedAt: string;
   confirmedAt?: string;
@@ -32,6 +38,8 @@ export interface InvoiceAccounting {
   totalBaseUnits: bigint;
   confirmedBaseUnits: bigint;
   pendingBaseUnits: bigint;
+  confirmedRebateBaseUnits: bigint;
+  pendingRebateBaseUnits: bigint;
   remainingBaseUnits: bigint;
 }
 
@@ -66,11 +74,15 @@ export function getInvoiceAccounting(invoice: ShareableInvoice, lifecycle: Invoi
   const totalBaseUnits = BigInt(decimalToBaseUnits(invoice.amount, invoice.tokenDecimals));
   const confirmedBaseUnits = sumPayments(lifecycle, "confirmed");
   const pendingBaseUnits = sumPayments(lifecycle, "submitted");
+  const confirmedRebateBaseUnits = sumRebates(lifecycle, "confirmed");
+  const pendingRebateBaseUnits = sumRebates(lifecycle, "submitted");
   return {
     totalBaseUnits,
     confirmedBaseUnits,
     pendingBaseUnits,
-    remainingBaseUnits: totalBaseUnits - confirmedBaseUnits,
+    confirmedRebateBaseUnits,
+    pendingRebateBaseUnits,
+    remainingBaseUnits: totalBaseUnits - confirmedBaseUnits - confirmedRebateBaseUnits,
   };
 }
 
@@ -90,6 +102,8 @@ export function getMilestoneAccounting(
     totalBaseUnits,
     confirmedBaseUnits,
     pendingBaseUnits,
+    confirmedRebateBaseUnits: 0n,
+    pendingRebateBaseUnits: 0n,
     remainingBaseUnits: totalBaseUnits - confirmedBaseUnits,
   };
 }
@@ -97,7 +111,7 @@ export function getMilestoneAccounting(
 export function validateInvoicePayment(
   invoice: ShareableInvoice,
   lifecycle: InvoiceLifecycle,
-  payment: Pick<InvoicePaymentRecord, "amountBaseUnits" | "milestoneId">,
+  payment: Pick<InvoicePaymentRecord, "amountBaseUnits" | "milestoneId" | "rebateBaseUnits" | "rebateBps" | "rebateCommitment" | "rebateIssuedAt" | "rebateValidUntil">,
 ): void {
   const effectiveStatus = deriveInvoiceStatus(invoice, lifecycle);
   if (!["active", "partially_paid"].includes(effectiveStatus)) {
@@ -108,7 +122,8 @@ export function validateInvoicePayment(
   const amount = BigInt(payment.amountBaseUnits);
   if (amount <= 0n) throw new Error("Payment amount must be positive.");
   const accounting = getInvoiceAccounting(invoice, lifecycle);
-  if (amount + accounting.pendingBaseUnits > accounting.remainingBaseUnits) {
+  const rebate = validateRebateAdjustment(invoice, payment, amount);
+  if (amount + rebate + accounting.pendingBaseUnits + accounting.pendingRebateBaseUnits > accounting.remainingBaseUnits) {
     throw new Error("Payment exceeds the exact remaining balance.");
   }
 
@@ -116,7 +131,7 @@ export function validateInvoicePayment(
     validateMilestonePayment(invoice, lifecycle, payment.milestoneId, amount);
   } else {
     if (payment.milestoneId) throw new Error("This invoice does not define milestones.");
-    if (!invoice.allowPartialPayments && amount !== accounting.remainingBaseUnits) {
+    if (!invoice.allowPartialPayments && amount + rebate !== accounting.remainingBaseUnits) {
       throw new Error("This invoice requires payment of the exact remaining balance.");
     }
   }
@@ -157,7 +172,7 @@ export function confirmInvoicePayment(
   if (!found) throw new Error("Submitted payment was not found.");
   const next = { ...lifecycle, payments, updatedAt: confirmedAt };
   const accounting = getInvoiceAccounting(invoice, next);
-  return { ...next, status: accounting.confirmedBaseUnits === accounting.totalBaseUnits ? "paid" : "partially_paid" };
+  return { ...next, status: accounting.confirmedBaseUnits + accounting.confirmedRebateBaseUnits === accounting.totalBaseUnits ? "paid" : "partially_paid" };
 }
 
 export function failInvoicePayment(invoice: ShareableInvoice, lifecycle: InvoiceLifecycle, hash: string, now = new Date()): InvoiceLifecycle {
@@ -217,6 +232,12 @@ function sumPayments(lifecycle: InvoiceLifecycle, status: InvoicePaymentStatus):
   return sumPaymentRecords(lifecycle.payments, status);
 }
 
+function sumRebates(lifecycle: InvoiceLifecycle, status: InvoicePaymentStatus): bigint {
+  return lifecycle.payments
+    .filter((payment) => payment.status === status && payment.rebateBaseUnits !== undefined)
+    .reduce((sum, payment) => sum + BigInt(payment.rebateBaseUnits ?? "0"), 0n);
+}
+
 function sumPaymentRecords(payments: InvoicePaymentRecord[], status: InvoicePaymentStatus): bigint {
   return payments
     .filter((payment) => payment.status === status)
@@ -241,6 +262,37 @@ function validateMilestonePayment(
   if (!invoice.allowPartialPayments && accounting.pendingBaseUnits + amount !== accounting.remainingBaseUnits) {
     throw new Error("This milestone requires its exact remaining balance.");
   }
+}
+
+function validateRebateAdjustment(
+  invoice: ShareableInvoice,
+  payment: Pick<InvoicePaymentRecord, "rebateBaseUnits" | "rebateBps" | "rebateCommitment" | "rebateIssuedAt" | "rebateValidUntil">,
+  settlementAmount: bigint,
+): bigint {
+  const values = [payment.rebateBaseUnits, payment.rebateBps, payment.rebateCommitment, payment.rebateIssuedAt, payment.rebateValidUntil];
+  if (values.every((value) => value === undefined)) return 0n;
+  if (values.some((value) => value === undefined)) throw new Error("Rebate adjustment is incomplete.");
+  if (!invoice.rebatePolicy || invoice.allowPartialPayments || invoice.milestones?.length) {
+    throw new Error("This invoice does not accept early-settlement rebates.");
+  }
+  if (!/^\d+$/.test(payment.rebateBaseUnits as string)) throw new Error("Rebate amount is invalid.");
+  const rebate = BigInt(payment.rebateBaseUnits as string);
+  if (rebate <= 0n) throw new Error("Rebate amount must be positive.");
+  if (!Number.isInteger(payment.rebateBps) || (payment.rebateBps as number) <= 0) throw new Error("Rebate rate is invalid.");
+  if (!/^0x[0-9a-f]+$/i.test(payment.rebateCommitment as string)) throw new Error("Rebate commitment is invalid.");
+  if (!isIsoTimestamp(payment.rebateIssuedAt) || !isIsoTimestamp(payment.rebateValidUntil)) throw new Error("Rebate validity window is invalid.");
+  const issuedAtMs = Date.parse(payment.rebateIssuedAt as string);
+  const validUntilMs = Date.parse(payment.rebateValidUntil as string);
+  const expectedValidUntil = Math.min(issuedAtMs + REBATE_QUOTE_TTL_MS, Date.parse(invoice.expiresAt));
+  if (issuedAtMs < Date.parse(invoice.createdAt) || issuedAtMs >= Date.parse(invoice.expiresAt) || validUntilMs !== expectedValidUntil) {
+    throw new Error("Rebate validity window is outside the invoice policy.");
+  }
+  const eligibility = calculateEligibleRebateBps(invoice.rebatePolicy, invoice.expiresAt, new Date(issuedAtMs));
+  if ((payment.rebateBps as number) > eligibility.eligibleRebateBps) throw new Error("Rebate rate exceeds the invoice policy.");
+  const principal = settlementAmount + rebate;
+  const expectedRebate = principal * BigInt(payment.rebateBps as number) / REBATE_BPS_DENOMINATOR;
+  if (rebate !== expectedRebate) throw new Error("Rebate amount does not match the committed basis-point adjustment.");
+  return rebate;
 }
 
 export function normalizeInvoiceLifecycle(value: unknown, fallback = createInvoiceLifecycle("active")): InvoiceLifecycle {
@@ -268,10 +320,28 @@ function isInvoicePaymentRecord(value: unknown): value is InvoicePaymentRecord {
       && /^\d+$/.test(payment.amountBaseUnits)
       && BigInt(payment.amountBaseUnits) > 0n
       && (!payment.milestoneId || /^[A-Za-z0-9_-]{1,40}$/.test(payment.milestoneId))
+      && isStoredRebateAdjustment(payment)
       && payment.status
       && ["submitted", "confirmed", "failed"].includes(payment.status)
       && isIsoTimestamp(payment.submittedAt)
       && (payment.status === "confirmed" ? isIsoTimestamp(payment.confirmedAt) : payment.confirmedAt === undefined),
+  );
+}
+
+function isStoredRebateAdjustment(payment: Partial<InvoicePaymentRecord>): boolean {
+  const values = [payment.rebateBaseUnits, payment.rebateBps, payment.rebateCommitment, payment.rebateIssuedAt, payment.rebateValidUntil];
+  if (values.every((value) => value === undefined)) return true;
+  return Boolean(
+    values.every((value) => value !== undefined)
+      && typeof payment.rebateBaseUnits === "string"
+      && /^\d+$/.test(payment.rebateBaseUnits)
+      && BigInt(payment.rebateBaseUnits) > 0n
+      && Number.isInteger(payment.rebateBps)
+      && (payment.rebateBps as number) > 0
+      && typeof payment.rebateCommitment === "string"
+      && /^0x[0-9a-f]+$/i.test(payment.rebateCommitment)
+      && isIsoTimestamp(payment.rebateIssuedAt)
+      && isIsoTimestamp(payment.rebateValidUntil),
   );
 }
 
