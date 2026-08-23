@@ -1,0 +1,95 @@
+/* Scoped to components/deadman-portal.tsx. Nothing here touches app/globals.css. */
+.launch { width:min(1240px,100%); margin:0 auto; display:grid; grid-template-columns:1.25fr .75fr; gap:28px; align-items:center; }
+.launchCopy span { color:var(--mint); font-size:10px; font-weight:850; letter-spacing:.16em; text-transform:uppercase; }
+.launchCopy h2 { margin:11px 0 12px; font-size:clamp(34px,4.6vw,58px); line-height:1; letter-spacing:-.055em; }
+.launchCopy h2 em { color:var(--mint); font-style:normal; }
+.launchCopy p { max-width:660px; margin:0 0 22px; color:var(--muted); font-size:15px; line-height:1.7; }
+.launchCopy button { width:auto; }
+.launchFacts { display:grid; gap:10px; }
+.launchFacts div { display:grid; gap:4px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#0a110e; }
+.launchFacts strong { font-size:13px; }
+.launchFacts span { color:var(--muted); font-size:11px; line-height:1.55; }
+.backdrop { position:fixed; inset:0; z-index:20; display:grid; place-items:start center; padding:24px; overflow:auto; background:#000c; }
+.modal { width:min(1160px,100%); padding:26px; border:1px solid #29463b; border-radius:18px; background:linear-gradient(150deg,#111b18,#0a100e); box-shadow:0 30px 90px #000b; }
+.modalHeader { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding-bottom:18px; border-bottom:1px solid var(--line); }
+.modalHeader span { color:var(--mint); font-size:10px; font-weight:850; letter-spacing:.14em; text-transform:uppercase; }
+.modalHeader h2 { margin:9px 0 6px; font-size:26px; letter-spacing:-.04em; }
+.modalHeader p { margin:0; color:var(--muted); font-size:12px; }
+.modalHeader code { color:#d9e7e1; }
+.modalHeader button { width:auto; padding:2px 9px; background:transparent; color:var(--muted); font-size:24px; }
+.truth { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:18px 0; }
+.truth div { display:grid; gap:5px; padding:13px 14px; border:1px solid #3d3227; border-radius:11px; background:#130f0a; }
+.truth b { color:#f4c95d; font-size:11px; letter-spacing:.04em; }
+.truth span { color:#b9a98d; font-size:11px; line-height:1.5; }
+.form { display:grid; gap:16px; }
+.fieldset { display:grid; gap:10px; border:1px solid var(--line); border-radius:12px; padding:16px; background:#0a110e; }
+.fieldset>legend, .fieldset>span { color:var(--mint); font-size:10px; font-weight:850; letter-spacing:.14em; text-transform:uppercase; padding:0; }
+.fields { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+.form label,.fields label { display:grid; gap:6px; color:#a9bbb4; font-size:11px; }
+.form input,.form select,.form textarea,.fields input,.fields select { width:100%; border:1px solid var(--line); background:#080d0b; color:var(--text); border-radius:9px; padding:11px 12px; outline:none; font-size:12px; }
+.form input:focus,.form select:focus,.form textarea:focus,.fields input:focus { border-color:var(--mint2); }
+.form textarea { min-height:70px; resize:vertical; font:12px/1.55 inherit; }
+.wide { grid-column:span 2; }
+.beneList { display:grid; gap:8px; }
+.beneRow { display:grid; grid-template-columns:1fr 90px 1fr 36px; gap:8px; align-items:center; }
+.beneRow input { width:100%; border:1px solid var(--line); background:#080d0b; color:var(--text); border-radius:9px; padding:10px 12px; outline:none; font-size:12px; }
+.beneRow input:focus { border-color:var(--mint2); }
+.beneRow button { width:36px; padding:9px 0; font-size:16px; }
+.fieldset>button { width:auto; justify-self:start; padding:9px 14px; font-size:11px; }
+.actions { display:flex; gap:9px; justify-content:flex-end; }
+.actions button { width:auto; }
+.ghost { background:transparent !important; color:#c3d0cb !important; border:1px solid var(--line); }
+.plan { display:grid; grid-template-columns:300px 1fr; gap:18px; }
+.sidebar { display:grid; gap:12px; align-content:start; padding:16px; border:1px solid var(--line); border-radius:12px; background:#0a110e; }
+.sidebar>span { color:var(--mint); font-size:10px; font-weight:850; letter-spacing:.14em; text-transform:uppercase; }
+.headline { display:grid; gap:3px; }
+.headline strong { font-size:26px; letter-spacing:-.04em; }
+.headline small { color:var(--muted); font-size:11px; }
+.sidebar dl { display:grid; gap:0; margin:0; }
+.sidebar dl>div { display:grid; grid-template-columns:1fr auto; gap:10px; padding:9px 0; border-top:1px solid var(--line); }
+.sidebar dt { color:var(--muted); font-size:11px; }
+.sidebar dd { margin:0; font-size:11px; text-align:right; overflow-wrap:anywhere; text-transform:capitalize; }
+.sidebar button { width:100%; padding:11px 12px; font-size:11px; }
+.main { display:grid; gap:14px; }
+.card { padding:16px; border:1px solid var(--line); border-radius:12px; background:#0a110e; }
+.card>div:first-child span { color:var(--mint); font-size:10px; font-weight:850; letter-spacing:.14em; text-transform:uppercase; }
+.card h3 { margin:7px 0 12px; font-size:16px; }
+.card p { margin:0 0 10px; color:var(--muted); font-size:12px; line-height:1.6; }
+.clock { display:grid; grid-template-columns:repeat(2,1fr); gap:0 18px; margin:0 0 12px; }
+.clock>div { display:grid; grid-template-columns:1fr auto; gap:10px; padding:9px 0; border-top:1px solid var(--line); }
+.clock dt { color:var(--muted); font-size:11px; }
+.clock dd { margin:0; font-size:11px; text-align:right; overflow-wrap:anywhere; }
+.clockActions { display:flex; gap:12px; align-items:end; flex-wrap:wrap; }
+.clockActions button { width:auto; padding:10px 14px; font-size:11px; }
+.clockActions label { display:grid; gap:6px; color:#a9bbb4; font-size:11px; }
+.clockActions input { width:120px; border:1px solid var(--line); background:#080d0b; color:var(--text); border-radius:9px; padding:9px 12px; outline:none; font-size:12px; }
+.clockActions input:focus { border-color:var(--mint2); }
+.legRow { display:grid; grid-template-columns:1.5fr 1fr 1fr; gap:12px; padding:12px 0; border-top:1px solid var(--line); align-items:center; }
+.legRow strong { display:block; font-size:12px; }
+.legRow small { display:block; margin-top:3px; color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
+.legRow b { font-size:12px; }
+.legRow em { display:block; margin-top:3px; color:var(--muted); font-size:10px; font-style:normal; }
+.shielded { color:var(--mint); }
+.exposed { color:#f4c95d; }
+.opsRow { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.opsRow>div { display:grid; gap:8px; align-content:start; padding:14px; border:1px solid var(--line); border-radius:11px; background:#0b120f; }
+.opsRow span { color:var(--mint); font-size:10px; font-weight:850; letter-spacing:.12em; text-transform:uppercase; }
+.opsRow h4 { margin:0; font-size:13px; }
+.opsRow p { margin:0; color:var(--muted); font-size:11px; line-height:1.55; }
+.opsRow button { width:100%; padding:11px 12px; font-size:11px; }
+.link { display:inline-block; color:var(--mint); font-size:11px; }
+.share textarea { width:100%; min-height:88px; resize:vertical; border:1px solid var(--line); border-radius:9px; padding:11px; background:#080d0b; color:#b7c9c1; font:10px/1.55 ui-monospace,SFMono-Regular,monospace; overflow-wrap:anywhere; }
+.share div:last-child { display:flex; gap:8px; margin-top:9px; }
+.share button { width:auto; padding:9px 12px; font-size:11px; }
+.visibility { display:grid; grid-template-columns:repeat(2,1fr); gap:9px; }
+.visibility>div { padding:12px; border:1px solid var(--line); border-radius:10px; background:#0b120f; }
+.visibility span { color:#c4d5ce; font-size:11px; font-weight:750; }
+.visibility p { margin:6px 0 0; color:var(--muted); font-size:11px; line-height:1.5; }
+.limitation { display:block; margin-top:10px; color:#f4c95d; font-size:11px; line-height:1.55; }
+.trustList { display:grid; gap:6px; margin:0; padding-left:18px; color:var(--muted); font-size:11px; line-height:1.55; }
+.message { margin:16px 0 0; padding-top:14px; border-top:1px solid var(--line); color:#8fa39b; font-size:11px; line-height:1.6; }
+@media (max-width:900px) {
+  .launch,.plan,.truth,.fields,.opsRow,.visibility,.clock { grid-template-columns:1fr; }
+  .legRow,.beneRow { grid-template-columns:1fr; }
+  .modal { padding:18px; }
+}
