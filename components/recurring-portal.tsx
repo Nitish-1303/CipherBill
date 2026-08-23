@@ -117,8 +117,14 @@ export function RecurringPortal() {
     if (!plan) return null;
     try { return evaluateBillingCycle(plan, selectedCycle, settledIndices, new Date(now)); } catch { return null; }
   }, [plan, selectedCycle, settledIndices, now]);
-  const visibility = useMemo(() => plan ? getRecurringVisibilityModel(plan) : null, [plan]);
-  const trust = useMemo(() => plan ? summarizeRecurringTrust(plan) : null, [plan]);
+  const visibility = useMemo(() => {
+    if (!plan) return null;
+    try { return getRecurringVisibilityModel(plan); } catch { return null; }
+  }, [plan]);
+  const trust = useMemo(() => {
+    if (!plan) return null;
+    try { return summarizeRecurringTrust(plan); } catch { return null; }
+  }, [plan]);
   const reminders = useMemo(() => {
     if (!plan || !autoReminders) return [];
     try { return buildCycleReminders(plan, selectedCycle, 3); } catch { return []; }
@@ -192,6 +198,7 @@ export function RecurringPortal() {
     const cycle = selectedCycle;
     setBusy("draw");
     setDrawHash("");
+    setDrawnCycle(null);
     try {
       const actions = buildCycleDrawActions(plan, cycle);
       setMessage(`Confirm cycle ${cycle} in the wallet: one private in-pool transfer of ${schedule[cycle - 1].amountDisplay} ${plan.asset.symbol} to the merchant. The relayer submits it, so never attribute the sender to the customer; the wallet appends its own fee, so none is added here.`);
