@@ -1,9 +1,9 @@
 :root { --bg:#070b0a; --panel:#0e1513; --line:#21302b; --text:#f3f6f3; --muted:#91a49d; --mint:#73f6bb; --mint2:#21bd80; color-scheme:dark; }
 * { box-sizing:border-box; }
 html { scroll-behavior:smooth; }
-body { margin:0; background:radial-gradient(circle at 70% 10%,#123128 0,transparent 32%),var(--bg); color:var(--text); font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif; }
+body { margin:0; background:var(--bg); color:var(--text); font-family:inherit; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
 a { color:inherit; text-decoration:none; }
-nav,footer { max-width:1180px; margin:auto; height:84px; padding:0 28px; display:flex; align-items:center; justify-content:space-between; }
+nav:not([aria-label="Primary"]) { max-width:1180px; margin:auto; height:84px; padding:0 28px; display:flex; align-items:center; justify-content:space-between; }
 .brand { font-size:18px; font-weight:750; letter-spacing:-.03em; }.brand span { color:var(--mint); margin-right:8px; }.nav-links { display:flex; gap:32px; color:var(--muted); font-size:14px; }
 button,.primary { border:0; border-radius:10px; padding:13px 19px; background:var(--mint); color:#052117; font-weight:750; cursor:pointer; }.wallet { background:transparent; color:var(--text); border:1px solid var(--line); }.hero { max-width:1180px; margin:0 auto; min-height:690px; padding:90px 28px 80px; display:grid; grid-template-columns:1.08fr .92fr; gap:72px; align-items:center; }
 .pill { display:inline-flex; gap:9px; align-items:center; color:#b8c8c2; border:1px solid var(--line); border-radius:999px; padding:7px 12px; font-size:12px; text-transform:uppercase; letter-spacing:.11em; }.pill i { width:7px; height:7px; border-radius:50%; background:var(--mint); box-shadow:0 0 15px var(--mint); }.hero h1 { font-size:clamp(54px,7vw,88px); line-height:.98; margin:30px 0; letter-spacing:-.065em; }.hero h1 em { color:var(--mint); font-style:normal; }.hero-copy>p { max-width:620px; color:var(--muted); line-height:1.75; font-size:18px; }.hero-actions { display:flex; gap:12px; margin:34px 0; align-items:center; }.secondary { padding:13px 19px; color:#c3d0cb; }.proof { display:flex; gap:22px; flex-wrap:wrap; color:#6f847c; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
