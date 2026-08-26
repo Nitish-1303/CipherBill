@@ -11,18 +11,23 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@react-three/drei": "^9.114.3",
+    "@react-three/fiber": "^8.17.10",
     "@starknet-io/get-starknet-discovery": "^6.0.3",
     "@starknet-io/get-starknet-wallet-standard": "^6.0.3",
     "@starknet-io/types-js": "^0.10.3",
+    "framer-motion": "^13.1.1",
     "next": "^15.4.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "starknet": "^10.4.0"
+    "starknet": "^10.4.0",
+    "three": "^0.169.0"
   },
   "devDependencies": {
     "@types/node": "^22.17.2",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
+    "@types/three": "^0.185.4",
     "eslint": "^9.33.0",
     "eslint-config-next": "^15.4.6",
     "typescript": "^5.9.2",

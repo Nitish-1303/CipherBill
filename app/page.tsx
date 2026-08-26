@@ -1,7 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { motion, useReducedMotion } from "framer-motion";
 
+import { CipherBillLogo, CipherBillWordmark } from "@/components/brand/cipherbill-logo";
+import { IconArrowDown, IconBoundary, IconPool, IconProve, IconSettle, IconShield } from "@/components/brand/cipherbill-icons";
+import { FlowDiagram } from "@/components/narrative/flow-diagram";
+import { MotionField } from "@/components/narrative/motion-field";
+import { NarrativeRail } from "@/components/narrative/narrative-rail";
+import { StoryChapter } from "@/components/narrative/story-chapter";
 import { PrivatePayment } from "@/components/private-payment";
 import { InvoicePanel } from "@/components/invoice-panel";
 import { WalletConnect } from "@/components/wallet-connect";
@@ -19,6 +27,11 @@ import { DisputePortal } from "@/components/dispute-portal";
 import { CashflowPortal } from "@/components/cashflow-portal";
 
 import styles from "./home.module.css";
+
+const HeroScene = dynamic(() => import("@/components/narrative/hero-scene").then((mod) => mod.HeroScene), {
+  ssr: false,
+  loading: () => <div className={styles.sceneSkeleton} aria-hidden="true" />,
+});
 
 const moduleGroups = [
   {
@@ -61,12 +74,6 @@ const moduleGroups = [
 ] as const;
 
 type Tab = (typeof moduleGroups)[number]["modules"][number][0];
-
-const steps = [
-  ["01", "Shield", "Move STRK into a shielded balance through the live privacy pool."],
-  ["02", "Settle", "Send a private payment without exposing the payer's balance history."],
-  ["03", "Prove", "Share selective transaction evidence for accounting or disputes."],
-] as const;
 
 const hiddenItems = [
   "In-pool sender, recipient, token, and amount",
@@ -116,6 +123,7 @@ function renderModule(tab: Tab) {
 export default function Home() {
   const [tab, setTab] = useState<Tab>("invoice");
   const [query, setQuery] = useState("");
+  const reduce = useReducedMotion();
 
   const activeLabel = useMemo(() => {
     for (const group of moduleGroups) {
@@ -138,30 +146,34 @@ export default function Home() {
 
   return (
     <div className={styles.shell}>
-      <div className={styles.mesh} aria-hidden="true" />
+      <MotionField />
+      <NarrativeRail />
 
       <header className={styles.topBar}>
         <div className={styles.topBarInner}>
-          <a className={styles.brand} href="#top">
-            <span className={styles.brandMark} aria-hidden="true">
-              ◒
-            </span>
-            CipherBill
+          <a className={styles.brand} href="#top" aria-label="CipherBill">
+            <CipherBillLogo className={styles.brandLogo} size={34} />
+            <CipherBillWordmark className={styles.wordmark} />
           </a>
           <nav className={styles.navLinks} aria-label="Primary">
-            <a href="#workflow">Workflow</a>
-            <a href="#demo">Merchant console</a>
-            <a href="#privacy">Privacy model</a>
+            <a href="#story">Story</a>
+            <a href="#demo">Console</a>
+            <a href="#privacy">Boundaries</a>
           </nav>
           <WalletConnect />
         </div>
       </header>
 
       <section className={styles.hero} id="top">
-        <div className={styles.heroCopy}>
+        <motion.div
+          className={styles.heroCopy}
+          initial={reduce ? false : { opacity: 0, y: 28 }}
+          animate={reduce ? undefined : { opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+        >
           <div className={styles.kicker}>
             <span className={styles.kickerDot} aria-hidden="true" />
-            Built for the STRK20 Private Sprint
+            STRK20 Private Sprint · Starknet mainnet
           </div>
           <h1 className={styles.heroTitle}>
             Private payments.
@@ -169,61 +181,96 @@ export default function Home() {
             <em>Public confidence.</em>
           </h1>
           <p className={styles.heroLead}>
-            Shielded invoicing and settlement for independent workers and global teams—built on Starknet and designed
-            around selective disclosure.
+            CipherBill is a scroll-through story of shielded commerce: what stays hidden in the STRK20 pool, what remains
+            observable, and how merchants run real workflows without leaking their financial graph.
           </p>
           <div className={styles.heroActions}>
-            <a className={styles.ctaPrimary} href="#demo">
-              Open merchant console →
+            <a className={styles.ctaPrimary} href="#story">
+              Start the narrative
             </a>
-            <a className={styles.ctaSecondary} href="#workflow">
-              See the flow
+            <a className={styles.ctaSecondary} href="#demo">
+              Jump to live console
             </a>
           </div>
-          <dl className={styles.metricStrip}>
-            <div>
-              <dt>Merchant modules</dt>
-              <dd>13 live prototypes</dd>
-            </div>
-            <div>
-              <dt>Network</dt>
-              <dd>Starknet mainnet</dd>
-            </div>
-            <div>
-              <dt>Privacy pool</dt>
-              <dd>STRK20 · SN_MAIN</dd>
-            </div>
-          </dl>
-        </div>
-        <div className={styles.heroPanel}>
-          <PrivatePayment />
+          <a className={styles.scrollCue} href="#story">
+            <IconArrowDown size={18} />
+            Scroll to prologue
+          </a>
+        </motion.div>
+
+        <div className={styles.heroStage}>
+          <Suspense fallback={<div className={styles.sceneSkeleton} aria-hidden="true" />}>
+            <HeroScene />
+          </Suspense>
+          <div className={styles.heroPanel}>
+            <PrivatePayment />
+          </div>
         </div>
       </section>
 
-      <section className={styles.workflow} id="workflow">
-        <div className={styles.workflowInner}>
-          <span className={styles.sectionEyebrow}>How it works</span>
-          <h2 className={styles.sectionTitle}>Privacy with an auditable edge.</h2>
-          <div className={styles.timeline}>
-            {steps.map(([number, title, copy]) => (
-              <article key={number} className={styles.timelineCard}>
-                <span className={styles.stepIndex}>{number}</span>
-                <h3>{title}</h3>
-                <p>{copy}</p>
-              </article>
-            ))}
-          </div>
+      <section className={styles.story} id="story">
+        <div className={styles.storyInner}>
+          <header className={styles.storyIntro}>
+            <span className={styles.sectionEyebrow}>Prologue</span>
+            <h2 className={styles.sectionTitle}>Every public payment draws a map of your business.</h2>
+            <p>
+              On a transparent chain, repeated invoices, payroll, and treasury moves become a readable graph. CipherBill
+              keeps day-to-day settlement inside STRK20 while preserving audit paths you control.
+            </p>
+          </header>
+
+          <FlowDiagram />
+
+          <StoryChapter
+            id="shield"
+            index="Chapter 01"
+            title="Shield — enter the pool with wallet-signed deposits"
+            thesis="Public STRK moves into a shielded balance. The deposit edge is observable; the note value inside the pool is not."
+            icon={<IconShield />}
+            facts={[
+              "Two wallet prompts on shield: ERC-20 approval, then the private deposit.",
+              "Shielded balance is unavailable until a privacy-enabled Starknet wallet connects.",
+              "Deposits publish public addresses and amounts at the pool boundary.",
+            ]}
+          />
+
+          <StoryChapter
+            id="settle"
+            index="Chapter 02"
+            title="Settle — pay recipients without exposing payer history"
+            thesis="Private transfers move shielded value between registered STRK20 accounts. Observers cannot read in-pool sender, recipient, token, or amount."
+            icon={<IconSettle />}
+            facts={[
+              "Both sender and recipient must be registered with STRK20 before a private transfer.",
+              "Memos and invoice metadata stay in application fields you choose to share.",
+              "Nothing in this demo executes on-chain until your wallet signs it.",
+            ]}
+          />
+
+          <StoryChapter
+            id="prove"
+            index="Chapter 03"
+            title="Prove — disclose only what auditors need"
+            thesis="Selective disclosure lets merchants answer compliance questions without reopening the entire pool history."
+            icon={<IconProve />}
+            facts={[
+              "Viewing keys and proof artifacts are separate from day-to-day settlement.",
+              "Published nullifiers are visible but unlinkable without authorized key material.",
+              "Open-note flows and app metadata can still leak correlation if used carelessly.",
+            ]}
+            accent="neutral"
+          />
         </div>
       </section>
 
       <section className={styles.console} id="demo">
         <div className={styles.consoleInner}>
           <div className={styles.consoleHead}>
-            <span className={styles.sectionEyebrow}>Merchant console</span>
-            <h2 className={styles.sectionTitle}>One surface for every private commerce workflow.</h2>
+            <span className={styles.sectionEyebrow}>Live merchant console</span>
+            <h2 className={styles.sectionTitle}>Thirteen prototypes. One privacy model.</h2>
             <p>
-              Browse institutional modules for invoicing, treasury, risk, and operations. Each portal keeps the same
-              honest privacy boundaries—nothing executes on-chain unless your wallet signs it.
+              Each module below is a working surface for judges to inspect: invoicing, treasury, risk controls, and
+              operations—all wired to the same STRK20 boundaries described above.
             </p>
           </div>
 
@@ -266,11 +313,18 @@ export default function Home() {
 
       <section className={styles.privacy} id="privacy">
         <div className={styles.privacyInner}>
-          <span className={styles.sectionEyebrow}>Selective disclosure</span>
-          <h2 className={styles.sectionTitle}>Useful privacy, honest edges.</h2>
+          <header className={styles.storyIntro}>
+            <span className={styles.sectionEyebrow}>
+              <IconBoundary size={14} /> Boundaries
+            </span>
+            <h2 className={styles.sectionTitle}>Useful privacy, honest edges.</h2>
+            <p>No larping: this table states exactly what CipherBill hides, and what remains public on Starknet.</p>
+          </header>
           <div className={styles.privacyGrid}>
             <article className={`${styles.privacyCard} ${styles.privacyCardHidden}`}>
-              <h3>Hidden inside the pool</h3>
+              <h3>
+                <IconPool size={18} /> Hidden inside the pool
+              </h3>
               <ul>
                 {hiddenItems.map((item) => (
                   <li key={item}>{item}</li>
@@ -292,40 +346,44 @@ export default function Home() {
       <footer className={styles.siteFooter}>
         <div className={styles.footerInner}>
           <div className={styles.footerBrand}>
-            <a className={styles.brand} href="#top">
-              <span className={styles.brandMark} aria-hidden="true">
-                ◒
-              </span>
-              CipherBill
+            <a className={styles.brand} href="#top" aria-label="CipherBill">
+              <CipherBillLogo className={styles.brandLogo} size={34} />
+              <CipherBillWordmark className={styles.wordmark} />
             </a>
-            <p>Open-source infrastructure for private commerce on Starknet—selective disclosure by design, not by accident.</p>
+            <p>
+              Open-source merchant infrastructure for STRK20 on Starknet. Built for judges, operators, and developers
+              who need privacy without fiction.
+            </p>
           </div>
           <div className={styles.footerCol}>
-            <h4>Product</h4>
+            <h4>Narrative</h4>
             <ul>
               <li>
-                <a href="#demo">Merchant console</a>
+                <a href="#story">Prologue</a>
               </li>
               <li>
-                <a href="#workflow">Workflow</a>
+                <a href="#shield">Shield</a>
               </li>
               <li>
-                <a href="#privacy">Privacy model</a>
+                <a href="#settle">Settle</a>
+              </li>
+              <li>
+                <a href="#prove">Prove</a>
               </li>
             </ul>
           </div>
           <div className={styles.footerCol}>
-            <h4>Network</h4>
+            <h4>Stack</h4>
             <ul>
               <li>STRK20 privacy pool</li>
               <li>Starknet mainnet (SN_MAIN)</li>
-              <li>Open source · 2026</li>
+              <li>Wallet API · starknet.js</li>
             </ul>
           </div>
         </div>
         <div className={styles.footerBottom}>
           <span>STRK20 Private Sprint · CipherBill</span>
-          <span>Shielded by default · auditable when required</span>
+          <span>Original mark & icons · no stock assets</span>
         </div>
       </footer>
     </div>

@@ -1,0 +1,25 @@
+.field {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(115, 246, 187, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(115, 246, 187, 0.04) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(circle at 50% 20%, black, transparent 78%);
+  opacity: 0.55;
+}
+
+.shard {
+  position: absolute;
+  border: 1px solid rgba(115, 246, 187, 0.18);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(115, 246, 187, 0.06), transparent);
+  backdrop-filter: blur(2px);
+}
