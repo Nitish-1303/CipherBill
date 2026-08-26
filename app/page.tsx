@@ -15,6 +15,7 @@ import { SubscriptionPortal } from "@/components/subscription-portal";
 import { CrossChainRouteModal } from "@/components/cross-chain-modal";
 import { FactoringMarketplace } from "@/components/factoring-marketplace";
 import { DisputePortal } from "@/components/dispute-portal";
+import { CashflowPortal } from "@/components/cashflow-portal";
 
 const tabs = [
   ["invoice", "Single Invoice"],
@@ -29,6 +30,7 @@ const tabs = [
   ["crosschain", "Settlement Routes"],
   ["factoring", "Invoice Factoring"],
   ["resolution", "Dispute Resolution"],
+  ["cashflow", "Cash Flow Forecast"],
 ] as const;
 
 type Tab = (typeof tabs)[number][0];
@@ -76,7 +78,7 @@ export default function Home() {
             </button>
           ))}
         </div>
-        {tab === "invoice" ? <InvoicePanel /> : tab === "payroll" ? <BatchPayrollDashboard /> : tab === "audit" ? <InvoiceDashboard /> : tab === "escrow" ? <EscrowPortal /> : tab === "fiat" ? <FiatConverter /> : tab === "disputes" ? <ArbitrationVault /> : tab === "insurance" ? <InsurancePortal /> : tab === "expenses" ? <ExpenseSplitterModal /> : tab === "subscriptions" ? <SubscriptionPortal /> : tab === "crosschain" ? <CrossChainRouteModal /> : tab === "factoring" ? <FactoringMarketplace /> : <DisputePortal />}
+        {tab === "invoice" ? <InvoicePanel /> : tab === "payroll" ? <BatchPayrollDashboard /> : tab === "audit" ? <InvoiceDashboard /> : tab === "escrow" ? <EscrowPortal /> : tab === "fiat" ? <FiatConverter /> : tab === "disputes" ? <ArbitrationVault /> : tab === "insurance" ? <InsurancePortal /> : tab === "expenses" ? <ExpenseSplitterModal /> : tab === "subscriptions" ? <SubscriptionPortal /> : tab === "crosschain" ? <CrossChainRouteModal /> : tab === "factoring" ? <FactoringMarketplace /> : tab === "resolution" ? <DisputePortal /> : <CashflowPortal />}
       </section>
 
       <section className="privacy-model">
