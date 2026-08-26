@@ -7,8 +7,10 @@ import { motion, useReducedMotion } from "framer-motion";
 import { CipherBillLogo, CipherBillWordmark } from "@/components/brand/cipherbill-logo";
 import { IconArrowDown, IconBoundary, IconPool, IconProve, IconSettle, IconShield } from "@/components/brand/cipherbill-icons";
 import { FlowDiagram } from "@/components/narrative/flow-diagram";
+import { HeroSceneFallback } from "@/components/narrative/hero-scene-fallback";
 import { MotionField } from "@/components/narrative/motion-field";
 import { NarrativeRail } from "@/components/narrative/narrative-rail";
+import { SceneErrorBoundary } from "@/components/narrative/scene-error-boundary";
 import { StoryChapter } from "@/components/narrative/story-chapter";
 import { PrivatePayment } from "@/components/private-payment";
 import { InvoicePanel } from "@/components/invoice-panel";
@@ -28,10 +30,16 @@ import { CashflowPortal } from "@/components/cashflow-portal";
 
 import styles from "./home.module.css";
 
-const HeroScene = dynamic(() => import("@/components/narrative/hero-scene").then((mod) => mod.HeroScene), {
-  ssr: false,
-  loading: () => <div className={styles.sceneSkeleton} aria-hidden="true" />,
-});
+const HeroScene = dynamic(
+  () =>
+    import("@/components/narrative/hero-scene")
+      .then((mod) => mod.HeroScene)
+      .catch(() => HeroSceneFallback),
+  {
+    ssr: false,
+    loading: () => <div className={styles.sceneSkeleton} aria-hidden="true" />,
+  },
+);
 
 const moduleGroups = [
   {
@@ -199,9 +207,11 @@ export default function Home() {
         </motion.div>
 
         <div className={styles.heroStage}>
-          <Suspense fallback={<div className={styles.sceneSkeleton} aria-hidden="true" />}>
-            <HeroScene />
-          </Suspense>
+          <SceneErrorBoundary fallback={<HeroSceneFallback />}>
+            <Suspense fallback={<div className={styles.sceneSkeleton} aria-hidden="true" />}>
+              <HeroScene />
+            </Suspense>
+          </SceneErrorBoundary>
           <div className={styles.heroPanel}>
             <PrivatePayment />
           </div>

@@ -43,6 +43,10 @@
   font-weight: 650;
 }
 
+.flowDotGroup {
+  transition: transform 0.35s ease;
+}
+
 .copy {
   margin: 12px 0 0;
   color: var(--muted);
