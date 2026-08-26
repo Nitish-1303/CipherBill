@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ec, hash } from "starknet";
 
 import {
   buildSubaccountCertificateBadge,
@@ -39,7 +40,20 @@ import {
 
 // Proving is synchronous and CPU-bound; a 16-bit band keeps every leg fast.
 const PROVE_TIMEOUT = { timeout: 120_000 };
+const CURVE_ORDER = ec.starkCurve.CURVE.n;
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+/** Deterministic entropy so proofs are reproducible in tests. */
+function makeEntropy(seed: string) {
+  const seedFelt = hash.starknetKeccak(seed);
+  let counter = 0;
+  let idCounter = 0;
+  return {
+    createId: () => `subaccount_test_${seed}_${(idCounter += 1)}`,
+    randomScalar: () =>
+      (BigInt(hash.computePoseidonHashOnElements([seedFelt, BigInt((counter += 1))])) % (CURVE_ORDER - 1n)) + 1n,
+  };
+}
 
 const TOKEN = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
 const ISSUER = createSubaccountIssuerKey();
@@ -204,15 +218,51 @@ describe("issue and verify", () => {
 
 describe("zero-knowledge hiding", () => {
   it("never leaks a hidden figure, label, or reference in the public certificate", PROVE_TIMEOUT, () => {
-    const json = serializeSubaccountCertificate(sample().certificate);
-    const raw = JSON.stringify(sample().certificate);
-    for (const secretString of ["31337", "27183", "18000", "12000", "Engineering", "Marketing", "acme-holdings-ein-88-1234567"]) {
-      expect(raw).not.toContain(secretString);
-      expect(json).not.toContain(Buffer.from(secretString).toString("base64").replace(/=+$/, ""));
+    const hidingLedger: SubaccountLedger = {
+      departments: [
+        { label: "LABEL-ENG-ZZZ", allocationBaseUnits: "918273645981", spendBaseUnits: "827364591237" },
+        { label: "LABEL-MKT-ZZZ", allocationBaseUnits: "718273645981", spendBaseUnits: "617273645981" },
+        { allocationBaseUnits: "0", spendBaseUnits: "0" },
+      ],
+    };
+    const hidingCap = "2800000000000";
+    const { certificate, secret } = issueSubaccountCertificate(
+      {
+        ...BASE_INPUT,
+        ledger: hidingLedger,
+        budgetCapBaseUnits: hidingCap,
+        enterpriseRef: "SECRET-ENT-ZZZ",
+        amountBitLength: 48,
+      },
+      new Date(),
+      makeEntropy("hiding"),
+    );
+    expect(verifySubaccountCertificate(certificate)).toBe(true);
+
+    const structured = JSON.stringify(certificate);
+    const serialized = serializeSubaccountCertificate(certificate);
+    for (const surface of [structured, serialized]) {
+      for (const allocation of secret.allocationsBaseUnits) {
+        if (allocation !== "0") expect(surface).not.toContain(allocation);
+      }
+      for (const spend of secret.spendsBaseUnits) {
+        if (spend !== "0") expect(surface).not.toContain(spend);
+      }
+      for (const blinding of secret.allocationBlindings) expect(surface).not.toContain(blinding);
+      for (const blinding of secret.spendBlindings) expect(surface).not.toContain(blinding);
+      for (const salt of secret.labelSalts) expect(surface).not.toContain(salt);
+      for (const label of secret.labels) {
+        if (label) expect(surface).not.toContain(label);
+      }
+      expect(surface).not.toContain(secret.totalAllocatedBlinding);
+      expect(surface).not.toContain(secret.totalSpentBlinding);
+      expect(surface).not.toContain(secret.enterpriseRef);
+      expect(surface).not.toContain(secret.enterpriseSalt);
+      expect(surface).not.toContain("SECRET-ENT-ZZZ");
     }
     // The public cap and department count are disclosed by design.
-    expect(raw).toContain("60000");
-    expect(raw).toContain("\"departmentCount\":3");
+    expect(structured).toContain(hidingCap);
+    expect(structured).toContain("\"departmentCount\":3");
   });
 });
 
