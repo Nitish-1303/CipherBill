@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 
 import styles from "./flow-diagram.module.css";
 
@@ -50,28 +49,23 @@ export function FlowDiagram() {
         />
         {nodes.map((node) => (
           <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
-            <motion.circle
+            <circle
               r={active === node.id ? 22 : 16}
               fill={active === node.id ? "rgba(115,246,187,0.18)" : "rgba(255,255,255,0.04)"}
               stroke={active === node.id ? "#73f6bb" : "#21302b"}
               strokeWidth="1.5"
-              animate={{ r: active === node.id ? 22 : 16 }}
-              transition={{ type: "spring", stiffness: 260, damping: 22 }}
             />
             <text y="44" textAnchor="middle" className={styles.nodeLabel}>
               {node.label}
             </text>
           </g>
         ))}
-        <motion.circle
-          r="7"
-          fill="#73f6bb"
-          animate={{
-            cx: nodes.find((node) => node.id === active)?.x ?? 80,
-            cy: 120,
-          }}
-          transition={{ type: "spring", stiffness: 120, damping: 18 }}
-        />
+        <g
+          className={styles.flowDotGroup}
+          transform={`translate(${(nodes.find((node) => node.id === active)?.x ?? 80) - 7}, 113)`}
+        >
+          <circle r="7" fill="#73f6bb" />
+        </g>
       </svg>
       <p className={styles.copy}>
         {active === "shield"
