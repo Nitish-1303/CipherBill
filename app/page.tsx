@@ -28,6 +28,7 @@ import { FactoringMarketplace } from "@/components/factoring-marketplace";
 import { DisputePortal } from "@/components/dispute-portal";
 import { CashflowPortal } from "@/components/cashflow-portal";
 import { FxHedgingPortal } from "@/components/fx-hedging-portal";
+import { VatCompliancePortal } from "@/components/vat-compliance-portal";
 
 import styles from "./home.module.css";
 
@@ -50,6 +51,7 @@ const moduleGroups = [
       ["invoice", "Single Invoice"],
       ["payroll", "Batch Payroll Dispersal"],
       ["audit", "Auditor Disclosures"],
+      ["vatcompliance", "VAT Compliance"],
     ],
   },
   {
@@ -105,6 +107,8 @@ function renderModule(tab: Tab) {
       return <BatchPayrollDashboard />;
     case "audit":
       return <InvoiceDashboard />;
+    case "vatcompliance":
+      return <VatCompliancePortal />;
     case "escrow":
       return <EscrowPortal />;
     case "fiat":
