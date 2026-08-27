@@ -27,6 +27,7 @@ import { CrossChainRouteModal } from "@/components/cross-chain-modal";
 import { FactoringMarketplace } from "@/components/factoring-marketplace";
 import { DisputePortal } from "@/components/dispute-portal";
 import { CashflowPortal } from "@/components/cashflow-portal";
+import { FxHedgingPortal } from "@/components/fx-hedging-portal";
 
 import styles from "./home.module.css";
 
@@ -56,6 +57,7 @@ const moduleGroups = [
     label: "Treasury & liquidity",
     modules: [
       ["cashflow", "Cash Flow Forecast"],
+      ["fxhedging", "FX Hedging"],
       ["factoring", "Invoice Factoring"],
       ["fiat", "Fiat Shielding"],
       ["crosschain", "Settlement Routes"],
@@ -123,6 +125,8 @@ function renderModule(tab: Tab) {
       return <DisputePortal />;
     case "cashflow":
       return <CashflowPortal />;
+    case "fxhedging":
+      return <FxHedgingPortal />;
     default:
       return <InvoicePanel />;
   }
