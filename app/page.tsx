@@ -29,6 +29,7 @@ import { DisputePortal } from "@/components/dispute-portal";
 import { CashflowPortal } from "@/components/cashflow-portal";
 import { FxHedgingPortal } from "@/components/fx-hedging-portal";
 import { PayrollPortal } from "@/components/payroll-portal";
+import { VatCompliancePortal } from "@/components/vat-compliance-portal";
 
 import styles from "./home.module.css";
 
@@ -52,6 +53,7 @@ const moduleGroups = [
       ["payroll", "Batch Payroll Dispersal"],
       ["zkpayroll", "ZK Payroll Protocol"],
       ["audit", "Auditor Disclosures"],
+      ["vatcompliance", "VAT Compliance"],
     ],
   },
   {
@@ -109,6 +111,8 @@ function renderModule(tab: Tab) {
       return <PayrollPortal />;
     case "audit":
       return <InvoiceDashboard />;
+    case "vatcompliance":
+      return <VatCompliancePortal />;
     case "escrow":
       return <EscrowPortal />;
     case "fiat":
