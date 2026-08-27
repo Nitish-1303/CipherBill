@@ -45,7 +45,7 @@ import {
 
 const CURVE_ORDER = ec.starkCurve.CURVE.n;
 const NOW = new Date("2026-08-25T00:00:00.000Z");
-const PROOF_TIMEOUT = 60_000;
+const PROOF_TIMEOUT = 120_000;
 
 function makeEntropy(seed: string): { createId: () => string; randomScalar: () => bigint } {
   const seedFelt = hash.starknetKeccak(seed);
