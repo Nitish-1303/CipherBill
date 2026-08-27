@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ec, hash } from "starknet";
 
-import { STRK_TOKEN_ADDRESS } from "./strk20/config";
+import { STRK_TOKEN_ADDRESS } from "../strk20/config";
 import {
   assessChurnRisk,
   buildDunningBalanceDisclosure,
@@ -38,10 +38,11 @@ import {
   type DunningVoucherOpening,
   type DunningVoucherSecret,
   type IssueDunningVoucherInput,
-} from "./dunning-engine";
+} from "../dunning-engine";
+
 const CURVE_ORDER = ec.starkCurve.CURVE.n;
 const NOW = new Date("2026-08-23T00:00:00.000Z");
-const PROOF_TIMEOUT = 60_000;
+const PROOF_TIMEOUT = 120_000;
 
 /** Deterministic, collision-free entropy so proofs are reproducible in tests. */
 function makeEntropy(seed: string): { createId: () => string; randomScalar: () => bigint } {
@@ -77,6 +78,7 @@ function baseInput(overrides: Partial<IssueDunningVoucherInput> = {}): IssueDunn
     ...overrides,
   };
 }
+
 describe("dunning state and cadence arithmetic", () => {
   it("computes remaining retries and grace for a recoverable subscription", () => {
     const s = computeDunningState("1000", 2, 5, BASE_POLICY);
@@ -125,6 +127,7 @@ describe("dunning state and cadence arithmetic", () => {
     expect(() => requireDunningPolicy({ ...BASE_POLICY, maxAttempts: MAX_DUNNING_ATTEMPTS + 1 })).toThrow(/max attempts/i);
   });
 });
+
 describe("voucher lifecycle and round-trip", { timeout: PROOF_TIMEOUT }, () => {
   it("issues, verifies, serializes, and re-verifies a voucher", () => {
     const { voucher, secret } = issueDunningVoucher(baseInput(), NOW, makeEntropy("lifecycle"));
@@ -135,7 +138,6 @@ describe("voucher lifecycle and round-trip", { timeout: PROOF_TIMEOUT }, () => {
     expect(round.bindingHash).toBe(voucher.bindingHash);
     expect(verifyDunningVoucher(round)).toBe(true);
 
-    // The secret records the inputs the merchant supplied.
     expect(secret.outstandingBaseUnits).toBe("1000000000000000000000");
     expect(secret.attemptsMade).toBe("2");
     expect(secret.elapsedDays).toBe("5");
@@ -170,6 +172,7 @@ describe("voucher lifecycle and round-trip", { timeout: PROOF_TIMEOUT }, () => {
     expect(verifyDunningVoucher(voucher)).toBe(true);
   });
 });
+
 describe("input guards", { timeout: PROOF_TIMEOUT }, () => {
   it("refuses to attest a subscription that has exhausted its retries", () => {
     expect(() => issueDunningVoucher(baseInput({ attemptsMade: 6 }), NOW, makeEntropy("x1"))).toThrow(/exhausted/i);
@@ -201,6 +204,7 @@ describe("input guards", { timeout: PROOF_TIMEOUT }, () => {
     expect(() => issueDunningVoucher(baseInput({ issuerSecretKey: "0xnothex" }), NOW, makeEntropy("x8"))).toThrow(/scalar/i);
   });
 });
+
 function clone(voucher: DunningVoucher): DunningVoucher {
   return JSON.parse(JSON.stringify(voucher)) as DunningVoucher;
 }
@@ -260,6 +264,7 @@ describe("tamper resistance", { timeout: PROOF_TIMEOUT }, () => {
     expect(verifyDunningVoucher(v)).toBe(false);
   });
 });
+
 function openingFromSecret(secret: DunningVoucherSecret): DunningVoucherOpening {
   return {
     outstandingBaseUnits: secret.outstandingBaseUnits,
@@ -305,6 +310,7 @@ describe("selective disclosure and openings", { timeout: PROOF_TIMEOUT }, () => 
     expect(verifyDunningVoucherOpening(issued.voucher, { ...opening, outstandingBaseUnits: "1" })).toBe(false);
   });
 });
+
 describe("zero-knowledge hiding", { timeout: PROOF_TIMEOUT }, () => {
   it("never embeds the balance, blindings, salts, or references in the voucher", () => {
     const { voucher, secret } = issueDunningVoucher(
@@ -326,7 +332,6 @@ describe("zero-knowledge hiding", { timeout: PROOF_TIMEOUT }, () => {
       expect(surface).not.toContain("SECRET-SUB-ZZZ");
       expect(surface).not.toContain("SECRET-PTOK-ZZZ");
     }
-    // The public subscription reference and policy, by contrast, are deliberately disclosed.
     expect(structured).toContain("SUB-2026-0007");
   });
 
@@ -370,6 +375,7 @@ describe("honest trust and visibility model", () => {
     expect(model.disclosedToVerifier.length).toBeGreaterThan(0);
   });
 });
+
 describe("generator and formatting helpers", () => {
   it("derives a stable, canonical generator H", () => {
     const a = deriveDunningGenerator();

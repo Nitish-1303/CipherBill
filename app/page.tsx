@@ -30,6 +30,7 @@ import { CashflowPortal } from "@/components/cashflow-portal";
 import { FxHedgingPortal } from "@/components/fx-hedging-portal";
 import { PayrollPortal } from "@/components/payroll-portal";
 import { VatCompliancePortal } from "@/components/vat-compliance-portal";
+import { DunningPortal } from "@/components/dunning-portal";
 
 import styles from "./home.module.css";
 
@@ -83,6 +84,7 @@ const moduleGroups = [
     modules: [
       ["expenses", "Expense Splitter"],
       ["subscriptions", "Private Memberships"],
+      ["dunning", "Dunning & Recovery"],
     ],
   },
 ] as const;
@@ -125,6 +127,8 @@ function renderModule(tab: Tab) {
       return <ExpenseSplitterModal />;
     case "subscriptions":
       return <SubscriptionPortal />;
+    case "dunning":
+      return <DunningPortal />;
     case "crosschain":
       return <CrossChainRouteModal />;
     case "factoring":
