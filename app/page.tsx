@@ -31,6 +31,7 @@ import { FxHedgingPortal } from "@/components/fx-hedging-portal";
 import { PayrollPortal } from "@/components/payroll-portal";
 import { VatCompliancePortal } from "@/components/vat-compliance-portal";
 import { DunningPortal } from "@/components/dunning-portal";
+import { TreasurySweepPortal } from "@/components/treasury-sweep-portal";
 
 import styles from "./home.module.css";
 
@@ -62,6 +63,7 @@ const moduleGroups = [
     label: "Treasury & liquidity",
     modules: [
       ["cashflow", "Cash Flow Forecast"],
+      ["treasurysweep", "Treasury Sweep"],
       ["fxhedging", "FX Hedging"],
       ["factoring", "Invoice Factoring"],
       ["fiat", "Fiat Shielding"],
@@ -137,6 +139,8 @@ function renderModule(tab: Tab) {
       return <DisputePortal />;
     case "cashflow":
       return <CashflowPortal />;
+    case "treasurysweep":
+      return <TreasurySweepPortal />;
     case "fxhedging":
       return <FxHedgingPortal />;
     default:
@@ -293,7 +297,7 @@ export default function Home() {
         <div className={styles.consoleInner}>
           <div className={styles.consoleHead}>
             <span className={styles.sectionEyebrow}>Live merchant console</span>
-            <h2 className={styles.sectionTitle}>Thirteen prototypes. One privacy model.</h2>
+            <h2 className={styles.sectionTitle}>Eighteen prototypes. One privacy model.</h2>
             <p>
               Each module below is a working surface for judges to inspect: invoicing, treasury, risk controls, and
               operations—all wired to the same STRK20 boundaries described above.
