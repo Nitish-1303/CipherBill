@@ -32,6 +32,7 @@ import { PayrollPortal } from "@/components/payroll-portal";
 import { VatCompliancePortal } from "@/components/vat-compliance-portal";
 import { DunningPortal } from "@/components/dunning-portal";
 import { TreasurySweepPortal } from "@/components/treasury-sweep-portal";
+import { FactoringPortal } from "@/components/factoring-portal";
 import { RevenueRoutingPortal } from "@/components/revenue-routing-portal";
 
 import styles from "./home.module.css";
@@ -68,6 +69,7 @@ const moduleGroups = [
       ["revenuerouting", "Revenue Routing"],
       ["fxhedging", "FX Hedging"],
       ["factoring", "Invoice Factoring"],
+      ["factoringvault", "Factoring Vault"],
       ["fiat", "Fiat Shielding"],
       ["crosschain", "Settlement Routes"],
     ],
@@ -137,6 +139,8 @@ function renderModule(tab: Tab) {
       return <CrossChainRouteModal />;
     case "factoring":
       return <FactoringMarketplace />;
+    case "factoringvault":
+      return <FactoringPortal />;
     case "resolution":
       return <DisputePortal />;
     case "cashflow":
@@ -301,7 +305,7 @@ export default function Home() {
         <div className={styles.consoleInner}>
           <div className={styles.consoleHead}>
             <span className={styles.sectionEyebrow}>Live merchant console</span>
-            <h2 className={styles.sectionTitle}>Nineteen prototypes. One privacy model.</h2>
+            <h2 className={styles.sectionTitle}>Twenty prototypes. One privacy model.</h2>
             <p>
               Each module below is a working surface for judges to inspect: invoicing, treasury, risk controls, and
               operations—all wired to the same STRK20 boundaries described above.
