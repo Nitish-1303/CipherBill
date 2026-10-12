@@ -150,8 +150,8 @@ describe("invoice lifecycle", () => {
     const rebateInvoice: ShareableInvoice = {
       ...invoice,
       allowPartialPayments: false,
-      createdAt: "2026-08-01T00:00:00.000Z",
-      expiresAt: "2026-09-01T00:00:00.000Z",
+      createdAt: "2099-08-01T00:00:00.000Z",
+      expiresAt: "2099-09-01T00:00:00.000Z",
       rebatePolicy: { version: 1, maximumRebateBps: 1_000, minimumLeadTimeSeconds: 3_600, fullRebateLeadTimeSeconds: 864_000 },
     };
     const submitted = submitInvoicePayment(rebateInvoice, createInvoiceLifecycle("active"), {
@@ -160,16 +160,16 @@ describe("invoice lifecycle", () => {
       rebateBaseUnits: "750000000000000000",
       rebateBps: 750,
       rebateCommitment: "0x123",
-      rebateIssuedAt: "2026-08-22T00:00:00.000Z",
-      rebateValidUntil: "2026-08-22T00:05:00.000Z",
-      submittedAt: "2026-08-22T00:01:00.000Z",
+      rebateIssuedAt: "2099-08-22T00:00:00.000Z",
+      rebateValidUntil: "2099-08-22T00:05:00.000Z",
+      submittedAt: "2099-08-22T00:01:00.000Z",
     });
     expect(getInvoiceAccounting(rebateInvoice, submitted)).toMatchObject({
       pendingBaseUnits: 9250000000000000000n,
       pendingRebateBaseUnits: 750000000000000000n,
       remainingBaseUnits: 10000000000000000000n,
     });
-    const confirmed = confirmInvoicePayment(rebateInvoice, submitted, "0x8eb8", "2026-08-22T00:02:00.000Z");
+    const confirmed = confirmInvoicePayment(rebateInvoice, submitted, "0x8eb8", "2099-08-22T00:02:00.000Z");
     expect(confirmed.status).toBe("paid");
     expect(getInvoiceAccounting(rebateInvoice, confirmed)).toMatchObject({
       confirmedBaseUnits: 9250000000000000000n,
@@ -182,8 +182,8 @@ describe("invoice lifecycle", () => {
     const rebateInvoice: ShareableInvoice = {
       ...invoice,
       allowPartialPayments: false,
-      createdAt: "2026-08-01T00:00:00.000Z",
-      expiresAt: "2026-09-01T00:00:00.000Z",
+      createdAt: "2099-08-01T00:00:00.000Z",
+      expiresAt: "2099-09-01T00:00:00.000Z",
       rebatePolicy: { version: 1, maximumRebateBps: 1_000, minimumLeadTimeSeconds: 3_600, fullRebateLeadTimeSeconds: 864_000 },
     };
     const base = {
@@ -191,8 +191,8 @@ describe("invoice lifecycle", () => {
       rebateBaseUnits: "750000000000000000",
       rebateBps: 750,
       rebateCommitment: "0x123",
-      rebateIssuedAt: "2026-08-22T00:00:00.000Z",
-      rebateValidUntil: "2026-08-22T00:05:00.000Z",
+      rebateIssuedAt: "2099-08-22T00:00:00.000Z",
+      rebateValidUntil: "2099-08-22T00:05:00.000Z",
     };
     expect(() => validateInvoicePayment(rebateInvoice, createInvoiceLifecycle("active"), { ...base, rebateBps: 1_001 })).toThrow(/exceeds/i);
     expect(() => validateInvoicePayment(rebateInvoice, createInvoiceLifecycle("active"), { ...base, rebateBaseUnits: "1" })).toThrow(/does not match/i);
