@@ -16,6 +16,12 @@ https://github.com/user-attachments/assets/763fc37b-ef41-40f2-ac02-8f0a33c7608e
 
 Built by **Yeluru Nitish** · Telegram: `nikki_1303` · Category: Payments · Target network: Starknet mainnet (`SN_MAIN`)
 
+## Sponsor this project
+
+<p align="center">
+  <a href="https://github.com/sponsors/Nitish-1303"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?style=for-the-badge" alt="Sponsor Nitish-1303 on GitHub"></a>
+</p>
+
 ## Current status
 
 The interface and application tooling are implemented: guarded wallet connection, the STRK20 Wallet API adapter, shielded-balance and private-transfer controls, shareable invoice links, invoice lifecycle accounting, selective receipt exports, encrypted auditor disclosures, and the auditor viewer.
