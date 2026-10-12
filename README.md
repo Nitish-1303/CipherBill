@@ -1,86 +1,116 @@
 # CipherBill
 
-Privacy-first invoicing and settlement for independent workers and global teams, built for the [STRK20 Private Sprint](https://strk20.starknet.io/hackathon).
+**Your money, your business.** Privacy-first invoicing and a private-payment workspace on Starknet, built for the STRK20 Private Sprint.
 
-Builder: Yeluru Nitish · Telegram: `nikki_1303` · Category: Payments · Network: Starknet mainnet (`SN_MAIN`)
+[Live app](https://cipher-bill.vercel.app/) · [Auditor viewer](https://cipher-bill.vercel.app/audit)
 
-> Status: the Wallet API adapter, guarded wallet connection, shielded balance, shield, and private-transfer UI are implemented. Verified mainnet pool configuration, manual wallet acceptance, invoices, selective receipts, and evidence remain pending. The product does not claim completed privacy guarantees yet.
+## Walkthrough
+
+A 1:27 tour of the live interface, with narration and captions. No live wallet transaction is shown.
 
 https://github.com/user-attachments/assets/763fc37b-ef41-40f2-ac02-8f0a33c7608e
 
-## Problem
+Built by **Yeluru Nitish** · Telegram: `nikki_1303` · Category: Payments · Target network: Starknet mainnet (`SN_MAIN`)
 
-Public payment rails leak balances, counterparties and commercial relationships. CipherBill uses STRK20 shielded balances and private transfers while retaining a selective-disclosure path for invoices, accounting and disputes.
+## Current status
 
-## Core flow
+The interface and application tooling are implemented: guarded wallet connection, the STRK20 Wallet API adapter, shielded-balance and private-transfer controls, shareable invoice links, invoice lifecycle accounting, selective receipt exports, encrypted auditor disclosures, and the auditor viewer.
 
-1. Connect a Starknet wallet.
-2. Shield STRK through the live STRK20 pool.
-3. Create an invoice or private payment request.
-4. Settle through a private transfer.
-5. Export selective evidence without exposing the complete financial graph.
+**Verified mainnet settlement evidence is still pending.** The repository's `strk20.json` currently contains no transaction hashes or contract evidence. Implemented code, a deployed interface, and this walkthrough are not proof of successful private settlement or completed privacy guarantees. Wallet execution requires a configured mainnet RPC and a compatible privacy-enabled wallet.
 
-## Stack
+## What you can use
 
-- Next.js 15, React 18.3 and TypeScript
-- Starknet.js 10.4 Wallet API with the tested get-starknet 6.0.3 stack
-- STRK20 wallet integration boundary
-- Starknet mainnet target
+| Area | Implementation |
+| --- | --- |
+| Private payment | Load a shielded balance, prepare shielding, private transfers, and public withdrawals through the wallet adapter. Signing and execution stay with the wallet. |
+| Invoices | Create drafts, activate self-contained payment links, set expiry and partial-payment options, and define milestones. Local lifecycle records track submitted, confirmed, and failed payments. |
+| Selective receipts | Choose which application receipt fields to disclose and export JSON or printable receipt text. |
+| Auditor disclosures | Encrypt selected invoice and payment metadata in the browser with an AES-256-GCM key. Share the envelope and key separately; open the bundle in the auditor viewer. |
+| Workspace | Private payment plus 20 existing modules, grouped by invoicing, treasury, risk, and operations. These are wallet-integrated prototypes and local tools, not 20 verified financial services. |
+
+### Workspace modules
+
+- **Invoicing:** Single Invoice, Batch Payroll Dispersal, ZK Payroll Protocol, Auditor Disclosures, VAT Compliance.
+- **Treasasury & liquidity:** Cash Flow Forecast, Treasury Sweep, Revenue Routing, FX Hedging, Invoice Factoring, Factoring Vault, Fiat Shielding, Settlement Routes.
+- **Risk & trust:** Enterprise Escrow, Arbitration Vault, Dispute Resolution, Invoice Insurance.
+- **Operations:** Expense Splitter, Private Memberships, Dunning & Recovery.
+
+Module names describe the interface and local logic. They do not establish deployed contracts, custody, enforcement, regulatory compliance, or successful mainnet execution.
+
+## Payment flow
+
+1. Open the workspace and connect a compatible Starknet wallet on mainnet.
+2. Shield STRK into the configured STRK20 pool. ERC-20 approval and deposit are separate wallet prompts.
+3. Create an invoice link or prepare a private payment to a registered pool recipient.
+4. Review and sign in the wallet. The adapter validates inputs and tracks submission and receipt confirmation.
+5. Choose the receipt fields to export, or create an encrypted disclosure for an auditor.
+
+Both private-transfer participants must be registered with STRK20. The recipient onboards through their own wallet. Newly created change notes may need roughly ten blocks before they can be spent again. A private envelope may be submitted by a relayer; its sender is not necessarily the payer.
+
+## Privacy and trust boundaries
+
+- **In-pool privacy is the STRK20 design model**, not a claim that CipherBill has completed mainnet verification. Deposits, withdrawals, public addresses and amounts at the pool edges, timing, fees, and activity outside the pool remain observable.
+- **Standard invoice links are readable by anyone holding the URL.** Invoice fields are not encrypted. The payload checksum detects edits but does not authenticate the merchant.
+- **Local history is application metadata**, not shared merchant state or independent proof of payment. Clearing browser storage removes local records; self-contained invoice links do not depend on that history.
+- **Receipts are selected application metadata, not zero-knowledge proofs.** An auditor must independently verify any disclosed settlement hash.
+- **A CipherBill disclosure key is an application encryption key**, not a STRK20 protocol viewing key or auditor key escrow. It cannot read pool notes or balances, derive nullifiers, or authorize spending. A bundle has no merchant signature.
+- **Audit decryption happens in the browser.** The encrypted envelope can travel in the URL fragment, which browsers do not send to the server. Keep the key on a separate channel.
+
+Never put private keys, seed phrases, protocol viewing keys, wallet notes, wallet history, or credentials in invoice fields, links, or exports.
 
 ## Architecture
 
-The browser discovers a compatible wallet, verifies Wallet API support `>= 0.10.3`, and connects through `WalletAccountV6`. The typed STRK20 adapter owns validation, fee reads, action construction, bounded receipt confirmation, and safe error boundaries. The wallet owns viewing keys, note discovery, proving, signing, and submission. Invoice records are non-sensitive browser metadata only.
+Next.js 15, React 18.3, TypeScript, Starknet.js 10.4, and the get-starknet 6.0.3 Wallet API stack.
 
-## Local development
+The browser checks Wallet API support and connects through `WalletAccountV6`. The typed STRK20 adapter handles validation, fee reads, action construction, bounded receipt confirmation, and error states. The wallet owns note discovery, proving, signing, and submission; CipherBill does not receive its private keys or protocol viewing keys.
+
+- `app/page.tsx`: landing page and module workspace.
+- `app/pay/`: invoice payment routes.
+- `app/audit/`: browser-side encrypted disclosure viewer.
+- `lib/strk20/`: mainnet configuration, validation, and wallet integration.
+- `lib/invoices.ts` and `lib/invoice-lifecycle.ts`: invoice payloads, local records, and accounting.
+- `lib/selective-receipts.ts` and `lib/view-key.ts`: receipt selection and encrypted disclosure exports.
+
+## Run locally
+
+Use Node.js 20, matching CI.
 
 ```bash
-npm install
+npm ci
+cp .env.example .env.local
 npm run dev
 ```
 
 Open `http://localhost:3000`.
 
-## Mainnet configuration
+### Mainnet configuration
 
-Copy `.env.example` to `.env.local` and provide a public Starknet RPC endpoint and the verified STRK20 mainnet pool address. The application keeps shield, balance, and private-transfer actions disabled until both values are present and the connected wallet reports Starknet mainnet. Do not put private keys, seed phrases, viewing keys, notes, or proving credentials in environment variables.
+Set `NEXT_PUBLIC_STARKNET_RPC_URL` to a Starknet mainnet RPC endpoint. The chain must be `SN_MAIN`; the pool must match the mainnet address pinned in `lib/strk20/config.ts` and `.env.example`. The config returns unavailable when the RPC is missing, the chain is wrong, or the pool address does not match.
 
-CipherBill uses the Starknet Wallet API. A privacy-enabled wallet performs note discovery, proving, signing, and submission; the dApp does not receive those secrets. Wallet support is capability-dependent, so a wallet may connect while still being unable to execute STRK20 actions.
+`NEXT_PUBLIC_*` values are browser-visible. Never put private keys, seed phrases, viewing keys, notes, proving credentials, or server-only secrets in them. Wallet connection alone does not establish STRK20 support; shielded actions depend on the wallet's capabilities.
 
-Shielding is a separate public ERC-20 approval followed by a private deposit, so the wallet may show two prompts. Private transfers run between registered pool users; a recipient who has not registered must onboard in their privacy-enabled wallet first. Newly created change notes may need roughly ten blocks before they can be spent again. Private transaction envelopes may be submitted by a relayer, so CipherBill does not attribute a private payment to the envelope sender.
+## Checks
 
-## Privacy model
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm start
+```
 
-The wallet and STRK20 pool hide in-pool transfer details from ordinary public account history. Deposits, withdrawals, transaction timing, fees, account activity outside the pool, and any data intentionally shared through an invoice remain observable. CipherBill exports only explicitly permitted receipt metadata and does not provide a complete balance or transaction-history export.
+The repository includes tests for invoice encoding and lifecycle accounting, selective receipts, encrypted disclosures, and module logic. Passing tests does not replace live mainnet acceptance.
 
-## Current limitations
+## Mainnet acceptance and submission evidence
 
-- The verified Starknet mainnet STRK20 pool address is still required in `.env.local`; no Sepolia or demo address is accepted.
-- A privacy-enabled wallet with Wallet API STRK20 support is required for shielded actions. Connection support for Argent and Braavos depends on their current capabilities.
-- Invoices and selective-disclosure exports are not implemented in this first slice.
-- `strk20.json` contains no evidence until three successful mainnet pool-touching transactions are manually verified.
+Still to be demonstrated and independently verified:
 
-## Mainnet acceptance criteria
+- Wallet connection and STRK20 capability on Starknet mainnet.
+- Shielding through the configured live pool.
+- Successful private transfers and confirmation/failure handling.
+- At least three successful mainnet pool-touching transaction hashes in `strk20.json`.
 
-- [ ] Wallet connect on Starknet mainnet
-- [ ] Shield STRK through the live STRK20 pool
-- [ ] Execute private transfers via the official SDK/prover
-- [ ] Confirm transaction state and failure handling
-- [ ] Add at least three successful pool-touching hashes to `strk20.json`
-- [ ] Deploy a public demo
-- [ ] Record the three-minute demo video
-
-No mainnet transaction hashes are included until they are manually confirmed as successful `SN_MAIN` transactions touching the verified STRK20 pool.
-
-## Evidence manifest
-
-The hackathon reads submission evidence from [`strk20.json`](./strk20.json). Do not add testnet or unsuccessful hashes.
-
-## Security posture
-
-- No private keys or seed phrases are stored by this application.
-- Wallet signatures remain user-controlled.
-- Mainnet actions stay disabled until the official SDK integration is configured.
-- Transaction evidence must be verified on-chain before submission.
+The public app and narrated UI walkthrough are available above. The submission manifest's `demo_url` and `demo_video` fields are currently empty; this README does not update that manifest. Do not add testnet, failed, or unverified hashes as evidence.
 
 ## License
 
