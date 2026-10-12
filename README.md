@@ -6,6 +6,8 @@ Builder: Yeluru Nitish · Telegram: `nikki_1303` · Category: Payments · Networ
 
 > Status: the Wallet API adapter, guarded wallet connection, shielded balance, shield, and private-transfer UI are implemented. Verified mainnet pool configuration, manual wallet acceptance, invoices, selective receipts, and evidence remain pending. The product does not claim completed privacy guarantees yet.
 
+https://github.com/user-attachments/assets/763fc37b-ef41-40f2-ac02-8f0a33c7608e
+
 ## Problem
 
 Public payment rails leak balances, counterparties and commercial relationships. CipherBill uses STRK20 shielded balances and private transfers while retaining a selective-disclosure path for invoices, accounting and disputes.
