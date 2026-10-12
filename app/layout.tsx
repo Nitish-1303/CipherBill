@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
 
 import "./globals.css";
 import { WalletProvider } from "@/components/wallet-provider";
 
-const geist = localFont({ src: "./fonts/geist.woff2", display: "swap", variable: "--font-geist" });
 
 export const metadata: Metadata = {
   title: "CipherBill — Private invoices on Starknet",
@@ -14,7 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geist.className} ${geist.variable}`}>
+      <body>
         <WalletProvider>{children}</WalletProvider>
       </body>
     </html>
