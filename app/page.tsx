@@ -171,7 +171,7 @@ export default function Home() {
       </header>
       <main>
         <section className={styles.hero} id="top">
-          <div className={styles.heroCopy}><CipherBillLogo className={styles.bigLogo} size={48} /><span className={styles.badge}>Private commerce on Starknet</span><h1>Your money,<br /><span>your business.</span></h1><p>Invoice, shield and settle on Starknet. A payment shouldn't give the world a map of your business.</p><div className={styles.actions}><a className={styles.primary} href="#demo">Open workspace <span aria-hidden="true">→</span></a><a className={styles.secondary} href="#privacy">Learn more</a></div><small>Built for the STRK20 Private Sprint. Mainnet-targeted prototype.</small></div>
+          <div className={styles.heroCopy}><CipherBillLogo className={styles.bigLogo} size={48} /><span className={styles.badge}>Private commerce on Starknet</span><h1>Your money,<br /><span>your business.</span></h1><p>Invoice, shield and settle on Starknet. A payment shouldn&apos;t give the world a map of your business.</p><div className={styles.actions}><a className={styles.primary} href="#demo">Open workspace <span aria-hidden="true">→</span></a><a className={styles.secondary} href="#privacy">Learn more</a></div><small>Built for the STRK20 Private Sprint. Mainnet-targeted prototype.</small></div>
           <div className={styles.previewStage}>
             <div className={styles.preview} aria-label="Illustrative workspace preview">
               <div className={styles.previewHead}><span><CipherBillLogo size={25} />CipherBill</span><small>Not connected</small></div>
