@@ -184,7 +184,7 @@ export function PrivatePayment() {
   }
 
   return (
-    <section className="payment-card" id="demo">
+    <section className="payment-card" id="private-transfer">
       <div className="eyebrow">Private transfer</div>
       <h2>Pay without publishing your financial graph.</h2>
       <div className="balance-strip">
@@ -264,4 +264,4 @@ export function PrivatePayment() {
       />
     </section>
   );
-}
+        }
