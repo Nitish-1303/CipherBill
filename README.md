@@ -1,5 +1,9 @@
 # CipherBill
 
+<p align="center">
+  <img src="assets/assets/cipherbill-logo.svg" alt="CipherBill logo" width="160" />
+</p>
+
 **Your money, your business.** Privacy-first invoicing and a private-payment workspace on Starknet, built for the STRK20 Private Sprint.
 
 [Live app](https://cipher-bill.vercel.app/) · [Auditor viewer](https://cipher-bill.vercel.app/audit)
