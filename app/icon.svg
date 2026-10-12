@@ -1,8 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="8" fill="#070b0a"/>
-  <rect x="1.5" y="1.5" width="29" height="29" rx="8" stroke="#73f6bb" stroke-width="1.5" opacity="0.45"/>
-  <path d="M9 8h11.5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2Z" stroke="#73f6bb" stroke-width="1.5"/>
-  <path d="M11 13h8M11 16.5h6.5M11 20h4.5" stroke="#73f6bb" stroke-width="1.25" stroke-linecap="round"/>
-  <path d="M21.5 9.5a6.25 6.25 0 1 1-4.2 10.9" stroke="#21bd80" stroke-width="1.5" stroke-linecap="round"/>
-  <circle cx="22.75" cy="9.25" r="1.1" fill="#73f6bb"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" color="#2563eb"><title>CipherBill</title><path d="M50 9H25C13 9 5 18 5 32s8 23 20 23h25V43H26c-6 0-9-4-9-11s3-11 9-11h24V9Z" fill="currentColor"/><path d="M34 25h25v14H34V25ZM39 30v4h15v-4H39Z" fill="currentColor" fill-rule="evenodd"/></svg>
