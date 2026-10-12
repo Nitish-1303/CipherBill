@@ -1,17 +1,8 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
-import dynamic from "next/dynamic";
-import { motion, useReducedMotion } from "framer-motion";
+import { useMemo, useState } from "react";
 
 import { CipherBillLogo, CipherBillWordmark } from "@/components/brand/cipherbill-logo";
-import { IconArrowDown, IconBoundary, IconPool, IconProve, IconSettle, IconShield } from "@/components/brand/cipherbill-icons";
-import { FlowDiagram } from "@/components/narrative/flow-diagram";
-import { HeroSceneFallback } from "@/components/narrative/hero-scene-fallback";
-import { MotionField } from "@/components/narrative/motion-field";
-import { NarrativeRail } from "@/components/narrative/narrative-rail";
-import { SceneErrorBoundary } from "@/components/narrative/scene-error-boundary";
-import { StoryChapter } from "@/components/narrative/story-chapter";
 import { PrivatePayment } from "@/components/private-payment";
 import { InvoicePanel } from "@/components/invoice-panel";
 import { WalletConnect } from "@/components/wallet-connect";
@@ -37,22 +28,12 @@ import { RevenueRoutingPortal } from "@/components/revenue-routing-portal";
 
 import styles from "./home.module.css";
 
-const HeroScene = dynamic(
-  () =>
-    import("@/components/narrative/hero-scene")
-      .then((mod) => mod.HeroScene)
-      .catch(() => HeroSceneFallback),
-  {
-    ssr: false,
-    loading: () => <div className={styles.sceneSkeleton} aria-hidden="true" />,
-  },
-);
-
 const moduleGroups = [
   {
     id: "invoicing",
     label: "Invoicing",
     modules: [
+      ["transfer", "Private payment"],
       ["invoice", "Single Invoice"],
       ["payroll", "Batch Payroll Dispersal"],
       ["zkpayroll", "ZK Payroll Protocol"],
@@ -111,6 +92,8 @@ const publicItems = [
 
 function renderModule(tab: Tab) {
   switch (tab) {
+    case "transfer":
+      return <PrivatePayment />;
     case "invoice":
       return <InvoicePanel />;
     case "payroll":
@@ -157,9 +140,8 @@ function renderModule(tab: Tab) {
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("invoice");
+  const [tab, setTab] = useState<Tab>("transfer");
   const [query, setQuery] = useState("");
-  const reduce = useReducedMotion();
 
   const activeLabel = useMemo(() => {
     for (const group of moduleGroups) {
@@ -182,248 +164,30 @@ export default function Home() {
 
   return (
     <div className={styles.shell}>
-      <MotionField />
-      <NarrativeRail />
-
       <header className={styles.topBar}>
-        <div className={styles.topBarInner}>
-          <a className={styles.brand} href="#top" aria-label="CipherBill">
-            <CipherBillLogo className={styles.brandLogo} size={34} />
-            <CipherBillWordmark className={styles.wordmark} />
-          </a>
-          <nav className={styles.navLinks} aria-label="Primary">
-            <a href="#story">Story</a>
-            <a href="#demo">Console</a>
-            <a href="#privacy">Boundaries</a>
-          </nav>
-          <WalletConnect />
-        </div>
+        <a className={styles.brand} href="#top" aria-label="CipherBill home"><CipherBillLogo size={30} /><CipherBillWordmark /></a>
+        <nav className={styles.navLinks} aria-label="Primary"><a href="#demo">Workspace</a><a href="#privacy">Privacy</a><a href="#evidence">Evidence</a><a href="/audit">Audit</a><a href="https://github.com/Nitish-1303/CipherBill" target="_blank" rel="noreferrer">Source ↗</a></nav>
+        <WalletConnect />
       </header>
-
-      <section className={styles.hero} id="top">
-        <motion.div
-          className={styles.heroCopy}
-          initial={reduce ? false : { opacity: 0, y: 28 }}
-          animate={reduce ? undefined : { opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div className={styles.kicker}>
-            <span className={styles.kickerDot} aria-hidden="true" />
-            STRK20 Private Sprint · Starknet mainnet
-          </div>
-          <h1 className={styles.heroTitle}>
-            Private payments.
-            <br />
-            <em>Public confidence.</em>
-          </h1>
-          <p className={styles.heroLead}>
-            CipherBill is a scroll-through story of shielded commerce: what stays hidden in the STRK20 pool, what remains
-            observable, and how merchants run real workflows without leaking their financial graph.
-          </p>
-          <div className={styles.heroActions}>
-            <a className={styles.ctaPrimary} href="#story">
-              Start the narrative
-            </a>
-            <a className={styles.ctaSecondary} href="#demo">
-              Jump to live console
-            </a>
-          </div>
-          <a className={styles.scrollCue} href="#story">
-            <IconArrowDown size={18} />
-            Scroll to prologue
-          </a>
-        </motion.div>
-
-        <div className={styles.heroStage}>
-          <SceneErrorBoundary fallback={<HeroSceneFallback />}>
-            <Suspense fallback={<div className={styles.sceneSkeleton} aria-hidden="true" />}>
-              <HeroScene />
-            </Suspense>
-          </SceneErrorBoundary>
-          <div className={styles.heroPanel}>
-            <PrivatePayment />
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.story} id="story">
-        <div className={styles.storyInner}>
-          <header className={styles.storyIntro}>
-            <span className={styles.sectionEyebrow}>Prologue</span>
-            <h2 className={styles.sectionTitle}>Every public payment draws a map of your business.</h2>
-            <p>
-              On a transparent chain, repeated invoices, payroll, and treasury moves become a readable graph. CipherBill
-              keeps day-to-day settlement inside STRK20 while preserving audit paths you control.
-            </p>
-          </header>
-
-          <FlowDiagram />
-
-          <StoryChapter
-            id="shield"
-            index="Chapter 01"
-            title="Shield — enter the pool with wallet-signed deposits"
-            thesis="Public STRK moves into a shielded balance. The deposit edge is observable; the note value inside the pool is not."
-            icon={<IconShield />}
-            facts={[
-              "Two wallet prompts on shield: ERC-20 approval, then the private deposit.",
-              "Shielded balance is unavailable until a privacy-enabled Starknet wallet connects.",
-              "Deposits publish public addresses and amounts at the pool boundary.",
-            ]}
-          />
-
-          <StoryChapter
-            id="settle"
-            index="Chapter 02"
-            title="Settle — pay recipients without exposing payer history"
-            thesis="Private transfers move shielded value between registered STRK20 accounts. Observers cannot read in-pool sender, recipient, token, or amount."
-            icon={<IconSettle />}
-            facts={[
-              "Both sender and recipient must be registered with STRK20 before a private transfer.",
-              "Memos and invoice metadata stay in application fields you choose to share.",
-              "Nothing in this demo executes on-chain until your wallet signs it.",
-            ]}
-          />
-
-          <StoryChapter
-            id="prove"
-            index="Chapter 03"
-            title="Prove — disclose only what auditors need"
-            thesis="Selective disclosure lets merchants answer compliance questions without reopening the entire pool history."
-            icon={<IconProve />}
-            facts={[
-              "Viewing keys and proof artifacts are separate from day-to-day settlement.",
-              "Published nullifiers are visible but unlinkable without authorized key material.",
-              "Open-note flows and app metadata can still leak correlation if used carelessly.",
-            ]}
-            accent="neutral"
-          />
-        </div>
-      </section>
-
-      <section className={styles.console} id="demo">
-        <div className={styles.consoleInner}>
-          <div className={styles.consoleHead}>
-            <span className={styles.sectionEyebrow}>Live merchant console</span>
-            <h2 className={styles.sectionTitle}>Twenty prototypes. One privacy model.</h2>
-            <p>
-              Each module below is a working surface for judges to inspect: invoicing, treasury, risk controls, and
-              operations—all wired to the same STRK20 boundaries described above.
-            </p>
-          </div>
-
-          <div className={styles.consoleFrame}>
-            <aside className={styles.consoleSidebar} aria-label="Module navigation">
-              <input
-                className={styles.consoleSearch}
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Filter modules…"
-                aria-label="Filter merchant modules"
-              />
-              {filteredGroups.map((group) => (
-                <div key={group.id} className={styles.moduleGroup}>
-                  <div className={styles.groupLabel}>{group.label}</div>
-                  {group.modules.map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`${styles.moduleButton} ${tab === value ? styles.moduleButtonActive : ""}`}
-                      onClick={() => setTab(value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </aside>
-            <div className={styles.consoleMain}>
-              <div className={styles.consoleMainHead}>
-                <strong>{activeLabel}</strong>
-                <span>Client-side · wallet-signed · STRK20 mainnet</span>
-              </div>
-              {renderModule(tab)}
+      <main>
+        <section className={styles.hero} id="top">
+          <div className={styles.heroCopy}><CipherBillLogo className={styles.bigLogo} size={48} /><span className={styles.badge}>Private commerce on Starknet</span><h1>Your money,<br /><span>your business.</span></h1><p>Invoice, shield and settle on Starknet. A payment shouldn't give the world a map of your business.</p><div className={styles.actions}><a className={styles.primary} href="#demo">Open workspace <span aria-hidden="true">→</span></a><a className={styles.secondary} href="#privacy">Learn more</a></div><small>Built for the STRK20 Private Sprint. Mainnet-targeted prototype.</small></div>
+          <div className={styles.previewStage}>
+            <div className={styles.preview} aria-label="Illustrative workspace preview">
+              <div className={styles.previewHead}><span><CipherBillLogo size={25} />CipherBill</span><small>Not connected</small></div>
+              <div className={styles.previewBody}>
+                <div className={styles.previewTabs}><a href="#demo" onClick={() => setTab("transfer")}>Private payment</a><a href="#demo" onClick={() => setTab("invoice")}>Invoice links</a><a href="#demo" onClick={() => setTab("audit")}>Disclosures</a></div>
+                <div className={styles.previewContent}><h2>A little more discretion.</h2><p>Shielded payments start with a compatible wallet.</p><div className={styles.previewColumns}><div className={styles.previewBalance}><span>Shielded STRK balance</span><strong>--</strong><small>Connect a wallet in the workspace to load your balance.</small></div><div className={styles.previewFields}><span>Recipient address</span><div>0x...</div><div className={styles.previewFieldRow}><span>Amount<div>Amount in STRK</div></span><span>Asset<div>STRK</div></span></div><span>Memo (optional)</span><div>Invoice reference</div><button type="button" disabled>Send private payment →</button><small>Both parties must be registered with STRK20. Nothing moves until your wallet signs.</small></div></div></div>
+              </div><div className={styles.previewNotice}>Illustrative preview / no real balance, invoice or transaction</div>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section className={styles.privacy} id="privacy">
-        <div className={styles.privacyInner}>
-          <header className={styles.storyIntro}>
-            <span className={styles.sectionEyebrow}>
-              <IconBoundary size={14} /> Boundaries
-            </span>
-            <h2 className={styles.sectionTitle}>Useful privacy, honest edges.</h2>
-            <p>No larping: this table states exactly what CipherBill hides, and what remains public on Starknet.</p>
-          </header>
-          <div className={styles.privacyGrid}>
-            <article className={`${styles.privacyCard} ${styles.privacyCardHidden}`}>
-              <h3>
-                <IconPool size={18} /> Hidden inside the pool
-              </h3>
-              <ul>
-                {hiddenItems.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-            <article className={`${styles.privacyCard} ${styles.privacyCardPublic}`}>
-              <h3>Public or observable</h3>
-              <ul>
-                {publicItems.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <footer className={styles.siteFooter}>
-        <div className={styles.footerInner}>
-          <div className={styles.footerBrand}>
-            <a className={styles.brand} href="#top" aria-label="CipherBill">
-              <CipherBillLogo className={styles.brandLogo} size={34} />
-              <CipherBillWordmark className={styles.wordmark} />
-            </a>
-            <p>
-              Open-source merchant infrastructure for STRK20 on Starknet. Built for judges, operators, and developers
-              who need privacy without fiction.
-            </p>
-          </div>
-          <div className={styles.footerCol}>
-            <h4>Narrative</h4>
-            <ul>
-              <li>
-                <a href="#story">Prologue</a>
-              </li>
-              <li>
-                <a href="#shield">Shield</a>
-              </li>
-              <li>
-                <a href="#settle">Settle</a>
-              </li>
-              <li>
-                <a href="#prove">Prove</a>
-              </li>
-            </ul>
-          </div>
-          <div className={styles.footerCol}>
-            <h4>Stack</h4>
-            <ul>
-              <li>STRK20 privacy pool</li>
-              <li>Starknet mainnet (SN_MAIN)</li>
-              <li>Wallet API · starknet.js</li>
-            </ul>
-          </div>
-        </div>
-        <div className={styles.footerBottom}>
-          <span>STRK20 Private Sprint · CipherBill</span>
-          <span>Original mark & icons · no stock assets</span>
-        </div>
-      </footer>
+        </section>
+        <section className={styles.statusStrip} aria-label="Implementation status"><div><strong>Wallet adapter <span>Built</span></strong><p>Discovery and capability checks implemented.</p></div><div><strong>Payment UI <span>Built</span></strong><p>Shield, balance and private transfer surfaces.</p></div><div><strong>Mainnet acceptance</strong><p>Manual wallet testing and transaction evidence pending.</p></div><div><strong>Selective receipts <span>Built</span></strong><p>Metadata exports implemented. Verified settlement evidence pending.</p></div></section>
+        <section className={styles.features}><h2>Built for how you actually get paid.</h2><p>Less exposure inside the pool. Clear boundaries outside it.<br />A working interface, not a completed privacy guarantee.</p><div className={styles.cards}><article><span className={styles.featureIcon}>01</span><h3>Shield your STRK.</h3><p>Move public STRK into a shielded balance. Deposit address and amount remain public. Approval and deposit use separate wallet prompts.</p></article><article><span className={styles.featureIcon}>02</span><h3>Settle privately.</h3><p>Pay a registered STRK20 recipient through a compatible wallet. In-pool details are designed to stay hidden. Withdrawals remain public.</p></article><article><span className={styles.featureIcon}>03</span><h3>Share less evidence.</h3><p>Choose which application receipt fields to disclose. Encrypt a bundle for an auditor. These exports are not ZK proofs or protocol viewing keys.</p><small>Verified mainnet evidence pending</small></article></div></section>
+        <section className={styles.privacy} id="privacy"><div className={styles.sectionHeader}><span className={styles.badge}>Privacy / honest boundaries</span><h2>Private inside.<br /><span>Observable at the edges.</span></h2><p>The STRK20 design model, not a claim of completed CipherBill mainnet verification.</p></div><div className={styles.privacyGrid}><article><h3>Designed to stay hidden</h3><ul>{hiddenItems.map(item => <li key={item}>{item}</li>)}</ul></article><article><h3>Public or observable</h3><ul>{publicItems.map(item => <li key={item}>{item}</li>)}</ul></article></div><p className={styles.note}>Anyone holding a standard invoice URL can read its fields. Never put private keys, seed phrases, viewing keys, notes or wallet history in invoice fields.</p></section>
+        <section className={styles.evidence} id="evidence"><div className={styles.sectionHeader}><span className={styles.badge}>Evidence / inspect the implementation</span><h2>A working interface.<br /><span>Not a finished promise.</span></h2><p>Built by Yeluru Nitish. Next.js, TypeScript and the Starknet Wallet API.</p></div><div className={styles.evidenceGrid}><article><span className={styles.evidenceLabel}>Implementation</span><h3>Inspect the source.</h3><p>Wallet action adapter, guarded submission and local invoice tooling. A delayed confirmation preserves the submitted hash.</p><a href="https://github.com/Nitish-1303/CipherBill" target="_blank" rel="noreferrer">Open the repository ↗</a></article><article><span className={styles.evidenceLabel}>Mainnet acceptance</span><h3>Evidence pending.</h3><p>No verified transactions or demo video are listed in the current repository manifest. Interface code is not proof of successful settlement.</p><span className={styles.pending}>Awaiting manually verified evidence</span></article><article><span className={styles.evidenceLabel}>Selective disclosure</span><h3>Application metadata.</h3><p>Receipt selectors and encrypted bundles are implemented. An auditor must independently verify any disclosed settlement hash.</p><a href="/audit">Open the auditor viewer →</a></article></div></section>
+        <section className={styles.console} id="demo"><div className={styles.sectionHeader}><span className={styles.badge}>The workspace</span><h2>One focused flow.<br /><span>Room to inspect the rest.</span></h2><p>Private payments plus all 20 existing console modules. Wallet-integrated prototypes and local proof tools, not 20 verified financial services.</p></div><div className={styles.consoleFrame}><aside className={styles.consoleSidebar} aria-label="Module navigation"><label className={styles.searchLabel} htmlFor="module-search">Find a module</label><input id="module-search" className={styles.consoleSearch} type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search modules" />{filteredGroups.length === 0 && <p className={styles.note}>No matching modules.</p>}{filteredGroups.map(group => <div key={group.id} className={styles.moduleGroup}><div className={styles.groupLabel}>{group.label}</div>{group.modules.map(([value,label]) => <button key={value} type="button" aria-pressed={tab === value} className={`${styles.moduleButton} ${tab === value ? styles.moduleButtonActive : ""}`} onClick={() => setTab(value)}>{label}</button>)}</div>)}</aside><div className={styles.consoleMain}><div className={styles.consoleMainHead}><strong>{activeLabel}</strong><span>{["zkpayroll","vatcompliance","cashflow","treasurysweep","revenuerouting","fxhedging","factoringvault","dunning"].includes(tab) ? "Local proof tool / no pool execution" : tab === "audit" ? "Encrypted application metadata / not protocol viewing keys" : "Wallet-integrated prototype / mainnet evidence pending"}</span></div>{renderModule(tab)}</div></div></section>
+      </main><footer className={styles.footer}><a className={styles.brand} href="#top"><CipherBillLogo size={26} />CipherBill</a><span>Built by Yeluru Nitish / STRK20 Private Sprint</span><a href="https://github.com/Nitish-1303/CipherBill" target="_blank" rel="noreferrer">Open source ↗</a></footer>
     </div>
   );
 }
