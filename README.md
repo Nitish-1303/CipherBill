@@ -6,7 +6,7 @@
 
 **Your money, your business.** Privacy-first invoicing and a private-payment workspace on Starknet, built for the STRK20 Private Sprint.
 
-[Live app](https://cipher-bill.vercel.app/) · [Auditor viewer](https://cipher-bill.vercel.app/audit)
+[Live app](https://cipher-bill.vercel.app/) · [Auditor viewer](https://cipher-bill.vercel.app/audit) · [Dependency Health](https://trypatchbay.vercel.app/dashboard)
 
 ## Walkthrough
 
@@ -125,3 +125,10 @@ The public app and narrated UI walkthrough are available above. The submission m
 ## License
 
 MIT
+
+## Automated Dependency Migration
+
+CipherBill is monitored and protected by [TryPatchBay](https://trypatchbay.vercel.app):
+- **Automated AST Codemods**: Breaking API upgrades (React 19, Next 15, Axios 1.x, Zod 3) detected and transformed with deterministic AST codemods.
+- **Empirical Red-to-Green Proof**: Test suites executed in isolated sandboxes before pull requests open to verify fix correctness.
+- **Live Monitoring**: Verified active on the [TryPatchBay Cockpit](https://trypatchbay.vercel.app/dashboard).
